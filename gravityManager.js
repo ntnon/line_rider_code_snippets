@@ -48,7 +48,6 @@
       remountable = true,
       startAngle = 0,
       defaultGravity = globalStartGravity,
-      //gravityKeyframes = [],
     ) {
       this.id = id;
       this.startPosition = startPosition;
@@ -154,14 +153,6 @@
     return riders;
   }
 
-  const introRider = new Rider();
-  introRider.id = "introRider";
-  introRider.startPosition = { x: 0, y: 300 };
-  introRider.startVelocity = { x: 0, y: 0 };
-  introRider.remountable = true;
-  introRider.startAngle = 0;
-  introRider.defaultGravity = { x: 0, y: 0.15 };
-
   // frames per beat
 
   const intervalFns = {
@@ -187,7 +178,7 @@
     ];
   };
 
-  const gravityFn = ({ x, y }) => {
+  const setGravityFn = ({ x, y }) => {
     return (t, g) => [[t, { x, y }]];
   };
 
@@ -205,23 +196,59 @@
   kramRider.id = "kramRider";
   kramRider.startAngle = 90;
 
+  const introRider = new Rider();
+  introRider.id = "introRider";
+  introRider.startPosition = { x: 0, y: 300 };
+  introRider.startVelocity = { x: 0, y: 0 };
+  introRider.remountable = true;
+  introRider.startAngle = 0;
+  introRider.defaultGravity = { x: 0, y: 0.15 };
+
+  const secondRider = introRider.copy();
+  secondRider.id = "secondRider";
+  secondRider.startPosition = { x: 100, y: 800 };
+
   const riders = {
     //firstRider: introRider.copy(),
     //krams: generateRiderArray(kramRider, 5),
     introRiders: generateRiderArray(introRider, 8),
+    secondRiders: generateRiderArray(secondRider, 8),
   };
 
   /*
-  applyGravity(riders.krams, [0, 0, 0], gravityFn(0, 0));
+  applyGravity(riders.krams, [0, 0, 0], setGravityFn(0, 0));
   applyGravity(riders.krams, [0, 1, 24], popFn(30, 0), (i) => 127 * i);
 */
-
-  applyGravity(riders.introRiders, [0, 0, 0], gravityFn({ x: 0, y: 0 }));
+  // FirstRider
+  applyGravity(riders.introRiders, [0, 0, 0], setGravityFn({ x: 0, y: 0 }));
   applyGravity(
     riders.introRiders,
     [0, 2, 0],
     popFn({ x: 2, y: 0 }),
     (i) => 128 * i,
+  );
+  applyGravity(
+    riders.introRiders,
+    [0, 35, 2],
+    popFn({ x: -0.001, y: 0 }),
+    (i) => 128 * i,
+  );
+
+  //SecondRider
+  applyGravity(riders.secondRiders, [0, 0, 0], setGravityFn({ x: 0, y: 0 }));
+  applyGravity(
+    riders.secondRiders,
+    [0, 35, 0],
+    setGravityFn(introRider.defaultGravity),
+    (i) => 128 * i,
+  );
+
+  // IntroRider + SecondRider
+  applyGravity(
+    riders.secondRiders.concat(riders.introRiders),
+    [1, 1, 0],
+    popFn({ x: 0, y: -0.00000001 }),
+    (i) => 32 * i,
   );
 
   if (window.Actions) {
