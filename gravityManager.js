@@ -163,23 +163,23 @@
     sixteenth: (i) => (trueFPB / 16) * i,
   };
 
-  const teleportFn = (x, y) => {
+  const teleportFn = (x, y, contactPoints) => {
     return (t, g) => [
-      [t + 0, { x: x, y: y }],
-      [t + 1, { x: -x, y: -y }],
+      [t + 0, { x: x, y: y, contactPoints }],
+      [t + 1, { x: -x, y: -y, contactPoints }],
       [t + 2, g],
     ];
   };
 
-  const popFn = ({ x, y }, duration = 0) => {
+  const popFn = ({ x, y, contactPoints }, duration = 0) => {
     return (t, g) => [
-      [t + 0, { x, y }],
+      [t + 0, { x, y, contactPoints }],
       [t + duration + 1, g],
     ];
   };
 
-  const setGravityFn = ({ x, y }) => {
-    return (t, g) => [[t, { x, y }]];
+  const setGravityFn = ({ x, y, contactPoints }) => {
+    return (t, g) => [[t, { x, y, contactPoints }]];
   };
 
   const defaultGravityFn = (t, g) => [[t, g]];
@@ -216,8 +216,8 @@
   };
 
   /*
-  applyGravity(riders.krams, [0, 0, 0], setGravityFn(0, 0));
-  applyGravity(riders.krams, [0, 1, 24], popFn(30, 0), (i) => 127 * i);
+  applyGravity(riders.krams, [0, 0, 0], setGravityFn({ x: 0, y: 0 }));
+  applyGravity(riders.krams, [0, 1, 24], popFn({ x: 30, y: 0 }), (i) => 127 * i);
 */
   // FirstRider
   applyGravity(riders.introRiders, [0, 0, 0], setGravityFn({ x: 0, y: 0 }));
