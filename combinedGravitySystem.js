@@ -250,7 +250,7 @@
 
   const defaultGravityFn = (t, g) => [[t, g]];
 
-  // Teleportation functions - maintain velocity
+  // Absolute eleportation function, maintain existing velocity
   const teleportTo = (target, contactPoints) => {
     return (t, g) => [
       [
@@ -275,6 +275,7 @@
     ];
   };
 
+  // Relative teleportation function, maintain existing velocity
   const teleportBy = (offset, contactPoints) => {
     return (t, g) => [
       [t, { x: offset.x, y: offset.y, contactPoints: contactPoints }],
@@ -420,14 +421,18 @@
                 gravity.target.y - referencePoint.pos.y - referencePoint.vel.y;
               return { x: accelX, y: accelY };
             } else {
-              // Other points maintain offset from reference point
-              const offsetX = contactPoint.pos.x - referencePoint.pos.x;
-              const offsetY = contactPoint.pos.y - referencePoint.pos.y;
-              const targetX = gravity.target.x + offsetX;
-              const targetY = gravity.target.y + offsetY;
-              const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
-              const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
-              return { x: accelX, y: accelY };
+              if (gravity.target.contactPoints.includes(currentContactPoint)) {
+                // Other points maintain offset from reference point
+                const offsetX = contactPoint.pos.x - referencePoint.pos.x;
+                const offsetY = contactPoint.pos.y - referencePoint.pos.y;
+                const targetX = gravity.target.x + offsetX;
+                const targetY = gravity.target.y + offsetY;
+                const accelX =
+                  targetX - contactPoint.pos.x - contactPoint.vel.x;
+                const accelY =
+                  targetY - contactPoint.pos.y - contactPoint.vel.y;
+                return { x: accelX, y: accelY };
+              }
             }
           }
 
@@ -436,7 +441,7 @@
             if (
               gravity.contactPoints &&
               gravity.contactPoints.length > 0 &&
-              !gravity.contactPoints.includes(currentContactPoint)
+              !gravity.target.contactPoints.includes(currentContactPoint)
             ) {
               return { x: 0, y: 0 }; // No change for unspecified points
             }
@@ -541,7 +546,7 @@
   applyGravity(
     riders.introRiders,
     [0, 5, 0],
-    teleportByAndStop({ x: 100, y: -100, contactPoints: [0, 1, 2, 3, 4] }),
+    teleportTo({ x: 100, y: -100 }, [0, 1, 2, 3, 4]),
     (i) => 30 * i,
   );
 
