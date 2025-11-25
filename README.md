@@ -1,5 +1,5 @@
 # TODO
-- [ ] Support default gravity per contact point per rider, as fallback
+- [ ] Support default gravity per contact point per rider, as fallback. Currently, default gravity is applied when no gravity is specified for a contact point.
 
 # Useful code snippets
 
