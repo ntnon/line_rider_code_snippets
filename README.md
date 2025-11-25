@@ -1,3 +1,6 @@
+# TODO
+- [ ] Support default gravity per contact point per rider, as fallback
+
 # Useful code snippets
 
 ## gravityManager.js
