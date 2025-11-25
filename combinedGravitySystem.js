@@ -19,7 +19,9 @@
     SCARF_5: 15,
     SCARF_6: 16,
   };
-  const body = [0, 1, 2, 3];
+  const sled = [0, 1, 2, 3];
+  const scarf = [10, 11, 12, 13, 14, 15, 16];
+  const notScarf = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
 
   // ==== PART 2: CACHE RESET ====
   window.store.getState().camera.playbackFollower._frames.length = 0;
@@ -251,14 +253,15 @@
   const defaultGravityFn = (t, g) => [[t, g]];
 
   // Absolute eleportation function, maintain existing velocity
-  const teleportTo = (target, contactPoints) => {
+  const teleportTo = ({ x, y, contactPoints }) => {
     return (t, g) => [
       [
         t,
         {
           type: "computed",
           compute: "teleport_absolute",
-          target: target,
+          x: x,
+          y: y,
           contactPoints: contactPoints,
         },
       ],
@@ -267,7 +270,8 @@
         {
           type: "computed",
           compute: "cancel_teleport_absolute",
-          target: target,
+          x: x,
+          y: y,
           contactPoints: contactPoints,
         },
       ],
@@ -276,24 +280,25 @@
   };
 
   // Relative teleportation function, maintain existing velocity
-  const teleportBy = (offset, contactPoints) => {
+  const teleportBy = ({ x, y, contactPoints }) => {
     return (t, g) => [
-      [t, { x: offset.x, y: offset.y, contactPoints: contactPoints }],
-      [t + 1, { x: -offset.x, y: -offset.y, contactPoints: contactPoints }],
+      [t, { x: x, y: y, contactPoints: contactPoints }],
+      [t + 1, { x: x, y: y, contactPoints: contactPoints }],
       [t + 2, g],
     ];
   };
 
   // Teleportation functions - with velocity cancellation
-  const teleportToAndStop = (target) => {
+  const teleportToAndStop = ({ x, y, contactPoints }) => {
     return (t, g) => [
       [
         t,
         {
           type: "computed",
           compute: "teleport_absolute",
-          target: target,
-          contactPoints: target.contactPoints,
+          x: x,
+          y: y,
+          contactPoints: contactPoints,
         },
       ],
       [
@@ -301,23 +306,26 @@
         {
           type: "computed",
           compute: "teleport_absolute_stop",
-          target: target,
-          contactPoints: target.contactPoints,
+          x: x,
+          y: y,
+          contactPoints: contactPoints,
         },
       ],
       [t + 2, g],
     ];
   };
 
-  const teleportByAndStop = (target) => {
+  const teleportByAndStop = ({ x, y, contactPoints }) => {
     return (t, g) => [
-      [t, { x: target.x, y: target.y, contactPoints: target.contactPoints }],
+      [t, { x: x, y: y, contactPoints: contactPoints }],
       [
         t + 1,
         {
           type: "computed",
           compute: "cancelVelocity",
-          contactPoints: target.contactPoints,
+          x: x,
+          y: y,
+          contactPoints: contactPoints,
         },
       ],
       [t + 2, g],
@@ -416,17 +424,17 @@
             if (currentContactPoint === referencePointIndex) {
               // Reference point goes directly to target
               const accelX =
-                gravity.target.x - referencePoint.pos.x - referencePoint.vel.x;
+                gravity.x - referencePoint.pos.x - referencePoint.vel.x;
               const accelY =
-                gravity.target.y - referencePoint.pos.y - referencePoint.vel.y;
+                gravity.y - referencePoint.pos.y - referencePoint.vel.y;
               return { x: accelX, y: accelY };
             } else {
-              if (gravity.target.contactPoints.includes(currentContactPoint)) {
+              if (gravity.contactPoints.includes(currentContactPoint)) {
                 // Other points maintain offset from reference point
                 const offsetX = contactPoint.pos.x - referencePoint.pos.x;
                 const offsetY = contactPoint.pos.y - referencePoint.pos.y;
-                const targetX = gravity.target.x + offsetX;
-                const targetY = gravity.target.y + offsetY;
+                const targetX = gravity.x + offsetX;
+                const targetY = gravity.y + offsetY;
                 const accelX =
                   targetX - contactPoint.pos.x - contactPoint.vel.x;
                 const accelY =
@@ -441,7 +449,7 @@
             if (
               gravity.contactPoints &&
               gravity.contactPoints.length > 0 &&
-              !gravity.target.contactPoints.includes(currentContactPoint)
+              !gravity.contactPoints.includes(currentContactPoint)
             ) {
               return { x: 0, y: 0 }; // No change for unspecified points
             }
@@ -456,16 +464,16 @@
             if (currentContactPoint === referencePointIndex) {
               // Cancel reference point's acceleration
               const origAccelX =
-                gravity.target.x - referencePoint.pos.x + referencePoint.vel.x;
+                gravity.x - referencePoint.pos.x + referencePoint.vel.x;
               const origAccelY =
-                gravity.target.y - referencePoint.pos.y + referencePoint.vel.y;
+                gravity.y - referencePoint.pos.y + referencePoint.vel.y;
               return { x: -origAccelX, y: -origAccelY };
             } else {
               // Cancel other points' acceleration based on offset
               const offsetX = contactPoint.pos.x - referencePoint.pos.x;
               const offsetY = contactPoint.pos.y - referencePoint.pos.y;
-              const origTargetX = gravity.target.x + offsetX;
-              const origTargetY = gravity.target.y + offsetY;
+              const origTargetX = gravity.x + offsetX;
+              const origTargetY = gravity.y + offsetY;
               const origAccelX =
                 origTargetX - contactPoint.pos.x + contactPoint.vel.x;
               const origAccelY =
@@ -539,14 +547,21 @@
   applyGravity(riders.introRiders, [0, 0, 0], setGravityFn({ x: 0, y: 0 }));
   applyGravity(
     riders.introRiders,
+    [0, 0, 0],
+    setGravityFn({ x: 0, y: -50, contactPoints: scarf }),
+  );
+
+  applyGravity(
+    riders.introRiders,
     [0, 1, 0],
-    popFn({ x: 2, y: 0 }),
+    popFn({ x: 2, y: 0, contactPoints: notScarf }),
     (i) => 5 * i,
   );
+
   applyGravity(
     riders.introRiders,
     [0, 5, 0],
-    teleportTo({ x: 100, y: -100 }, [0, 1, 2, 3, 4]),
+    teleportTo({ x: 100, y: -100, contactPoints: sled }),
     (i) => 30 * i,
   );
 
