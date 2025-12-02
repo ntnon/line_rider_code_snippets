@@ -22,6 +22,7 @@
   const sled = [0, 1, 2, 3];
   const scarf = [10, 11, 12, 13, 14, 15, 16];
   const notScarf = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const rider = [4, 5, 6, 7, 8, 9]; // Body parts only
 
   // ==== PART 2: CACHE RESET ====
   window.store.getState().camera.playbackFollower._frames.length = 0;

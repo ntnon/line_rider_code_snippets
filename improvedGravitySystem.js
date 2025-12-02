@@ -24,6 +24,31 @@
   const notScarf = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
   const rider = [4, 5, 6, 7, 8, 9]; // Body parts only
 
+  const defaultPointOffsets = {
+    // Sled points
+    [ContactPoints.PEG]: { x: 0, y: 0 },
+    [ContactPoints.TAIL]: { x: 0, y: 5 },
+    [ContactPoints.NOSE]: { x: 15, y: 5 },
+    [ContactPoints.STRING]: { x: 17.5, y: 0 },
+
+    // Rider points
+    [ContactPoints.BUTT]: { x: 5, y: 0 },
+    [ContactPoints.SHOULDER]: { x: 5, y: -5.5 },
+    [ContactPoints.RHAND]: { x: 11.5, y: -5 },
+    [ContactPoints.LHAND]: { x: 11.5, y: -5 },
+    [ContactPoints.LFOOT]: { x: 10, y: 5 },
+    [ContactPoints.RFOOT]: { x: 10, y: 5 },
+
+    // Scarf points
+    [ContactPoints.SCARF_0]: { x: 3, y: -5.5 },
+    [ContactPoints.SCARF_1]: { x: 1, y: -5.5 },
+    [ContactPoints.SCARF_2]: { x: -1, y: -5.5 },
+    [ContactPoints.SCARF_3]: { x: -3, y: -5.5 },
+    [ContactPoints.SCARF_4]: { x: -5, y: -5.5 },
+    [ContactPoints.SCARF_5]: { x: -7, y: -5.5 },
+    [ContactPoints.SCARF_6]: { x: -9, y: -5.5 },
+  };
+
   // ==== PART 2: CACHE RESET ====
   window.store.getState().camera.playbackFollower._frames.length = 0;
   window.store.getState().simulator.engine.engine._computed._frames.length = 1;
@@ -908,7 +933,7 @@
   applyGravity(
     riders.introRiders,
     [0, 10, 0],
-    teleportSledToRider(false), // maintain velocity
+    teleportSledToRider(true), // maintain velocity
     (i) => 40 * i,
   );
 
