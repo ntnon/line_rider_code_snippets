@@ -49,6 +49,24 @@
     [ContactPoints.SCARF_6]: { x: -9, y: -5.5 },
   };
 
+  function getOffsetsRelativeTo(referencePoint) {
+    const ref = defaultPointOffsets[referencePoint];
+    if (!ref)
+      throw new Error("Invalid reference contact point: " + referencePoint);
+
+    const result = {};
+
+    for (const cp in defaultPointOffsets) {
+      const p = defaultPointOffsets[cp];
+      result[cp] = {
+        x: p.x - ref.x,
+        y: p.y - ref.y,
+      };
+    }
+
+    return result;
+  }
+
   // ==== PART 2: CACHE RESET ====
   window.store.getState().camera.playbackFollower._frames.length = 0;
   window.store.getState().simulator.engine.engine._computed._frames.length = 1;
@@ -444,14 +462,13 @@
   };
 
   // NEW: Teleport sled to rider or rider to sled
-  const teleportSledToRider = (maintainVelocity = true) => {
+  const teleportSledToRider = () => {
     return (t, g) => [
       [
         t,
         {
           type: "computed",
           compute: "teleport_sled_to_rider",
-          maintainVelocity: maintainVelocity,
         },
       ],
       [
@@ -459,29 +476,26 @@
         {
           type: "computed",
           compute: "cancel_sled_to_rider",
-          maintainVelocity: maintainVelocity,
         },
       ],
       [t + 2, g],
     ];
   };
 
-  const teleportRiderToSled = (maintainVelocity = true) => {
+  const teleportRiderToSled = () => {
     return (t, g) => [
       [
         t,
         {
           type: "computed",
           compute: "teleport_rider_to_sled",
-          maintainVelocity: maintainVelocity,
         },
       ],
       [
         t + 1,
         {
           type: "computed",
-          compute: "cancel_rider_to_sled",
-          maintainVelocity: maintainVelocity,
+          compute: "cancelVelocity",
         },
       ],
       [t + 2, g],
@@ -681,41 +695,26 @@
 
             // Find center of rider (BUTT position is a good reference)
             const buttPoint = riderData.points[ContactPoints.BUTT];
-
-            // Map sled points to rider relative positions
-            let targetX, targetY;
-            switch (currentContactPoint) {
-              case ContactPoints.PEG:
-                // PEG goes to BUTT position
-                targetX = buttPoint.pos.x;
-                targetY = buttPoint.pos.y;
-                break;
-              case ContactPoints.TAIL:
-                // TAIL goes behind BUTT
-                targetX = buttPoint.pos.x - 10;
-                targetY = buttPoint.pos.y;
-                break;
-              case ContactPoints.NOSE:
-                // NOSE goes in front of BUTT
-                targetX = buttPoint.pos.x + 10;
-                targetY = buttPoint.pos.y;
-                break;
-              case ContactPoints.STRING:
-                // STRING goes above BUTT
-                targetX = buttPoint.pos.x;
-                targetY = buttPoint.pos.y - 5;
-                break;
+            if (!buttPoint) {
+              return { x: 0, y: 0 };
             }
 
-            if (gravity.maintainVelocity) {
-              const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
-              const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
-              return { x: accelX, y: accelY };
-            } else {
-              const accelX = targetX - contactPoint.pos.x;
-              const accelY = targetY - contactPoint.pos.y;
-              return { x: accelX, y: accelY };
+            // Get offsets for all contact points relative to BUTT
+            const offsets = getOffsetsRelativeTo(ContactPoints.BUTT);
+            if (!offsets[currentContactPoint]) {
+              return { x: 0, y: 0 };
             }
+
+            // Calculate target position using the relative offset
+            const offsetX = offsets[currentContactPoint].x;
+            const offsetY = offsets[currentContactPoint].y;
+            const targetX = buttPoint.pos.x + offsetX;
+            const targetY = buttPoint.pos.y + offsetY;
+
+            // Calculate acceleration needed to reach target and zero velocity
+            const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
+            const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
+            return { x: accelX, y: accelY };
           }
 
           case "cancel_sled_to_rider": {
@@ -724,37 +723,9 @@
               return { x: 0, y: 0 };
             }
 
-            // Find center of rider (BUTT position)
-            const buttPoint = riderData.points[ContactPoints.BUTT];
-
-            // Calculate reverse acceleration
-            let targetX, targetY;
-            switch (currentContactPoint) {
-              case ContactPoints.PEG:
-                targetX = buttPoint.pos.x;
-                targetY = buttPoint.pos.y;
-                break;
-              case ContactPoints.TAIL:
-                targetX = buttPoint.pos.x - 10;
-                targetY = buttPoint.pos.y;
-                break;
-              case ContactPoints.NOSE:
-                targetX = buttPoint.pos.x + 10;
-                targetY = buttPoint.pos.y;
-                break;
-              case ContactPoints.STRING:
-                targetX = buttPoint.pos.x;
-                targetY = buttPoint.pos.y - 5;
-                break;
-            }
-
-            const origAccelX = gravity.maintainVelocity
-              ? targetX - contactPoint.pos.x + contactPoint.vel.x
-              : targetX - contactPoint.pos.x;
-            const origAccelY = gravity.maintainVelocity
-              ? targetY - contactPoint.pos.y + contactPoint.vel.y
-              : targetY - contactPoint.pos.y;
-            return { x: -origAccelX, y: -origAccelY };
+            // Since we want to stop all momentum, we simply apply an acceleration
+            // that cancels out the current velocity
+            return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
           }
 
           case "teleport_rider_to_sled": {
@@ -765,51 +736,26 @@
 
             // Find center of sled (PEG position)
             const pegPoint = riderData.points[ContactPoints.PEG];
-
-            // Map rider points to sled relative positions
-            let targetX, targetY;
-            switch (currentContactPoint) {
-              case ContactPoints.BUTT:
-                // BUTT goes to PEG position
-                targetX = pegPoint.pos.x;
-                targetY = pegPoint.pos.y;
-                break;
-              case ContactPoints.SHOULDER:
-                // SHOULDER goes above PEG
-                targetX = pegPoint.pos.x;
-                targetY = pegPoint.pos.y - 10;
-                break;
-              case ContactPoints.LHAND:
-                // Left hand to left of PEG
-                targetX = pegPoint.pos.x - 8;
-                targetY = pegPoint.pos.y - 5;
-                break;
-              case ContactPoints.RHAND:
-                // Right hand to right of PEG
-                targetX = pegPoint.pos.x + 8;
-                targetY = pegPoint.pos.y - 5;
-                break;
-              case ContactPoints.LFOOT:
-                // Left foot below and left of PEG
-                targetX = pegPoint.pos.x - 5;
-                targetY = pegPoint.pos.y + 8;
-                break;
-              case ContactPoints.RFOOT:
-                // Right foot below and right of PEG
-                targetX = pegPoint.pos.x + 5;
-                targetY = pegPoint.pos.y + 8;
-                break;
+            if (!pegPoint) {
+              return { x: 0, y: 0 };
             }
 
-            if (gravity.maintainVelocity) {
-              const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
-              const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
-              return { x: accelX, y: accelY };
-            } else {
-              const accelX = targetX - contactPoint.pos.x;
-              const accelY = targetY - contactPoint.pos.y;
-              return { x: accelX, y: accelY };
+            // Get offsets for all contact points relative to PEG
+            const offsets = getOffsetsRelativeTo(ContactPoints.PEG);
+            if (!offsets[currentContactPoint]) {
+              return { x: 0, y: 0 };
             }
+
+            // Calculate target position using the relative offset
+            const offsetX = offsets[currentContactPoint].x;
+            const offsetY = offsets[currentContactPoint].y;
+            const targetX = pegPoint.pos.x + offsetX;
+            const targetY = pegPoint.pos.y + offsetY;
+
+            // Calculate acceleration needed to reach target and zero velocity
+            const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
+            const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
+            return { x: accelX, y: accelY };
           }
 
           case "cancel_rider_to_sled": {
@@ -818,45 +764,9 @@
               return { x: 0, y: 0 };
             }
 
-            // Find center of sled (PEG position)
-            const pegPoint = riderData.points[ContactPoints.PEG];
-
-            // Calculate reverse acceleration
-            let targetX, targetY;
-            switch (currentContactPoint) {
-              case ContactPoints.BUTT:
-                targetX = pegPoint.pos.x;
-                targetY = pegPoint.pos.y;
-                break;
-              case ContactPoints.SHOULDER:
-                targetX = pegPoint.pos.x;
-                targetY = pegPoint.pos.y - 10;
-                break;
-              case ContactPoints.LHAND:
-                targetX = pegPoint.pos.x - 8;
-                targetY = pegPoint.pos.y - 5;
-                break;
-              case ContactPoints.RHAND:
-                targetX = pegPoint.pos.x + 8;
-                targetY = pegPoint.pos.y - 5;
-                break;
-              case ContactPoints.LFOOT:
-                targetX = pegPoint.pos.x - 5;
-                targetY = pegPoint.pos.y + 8;
-                break;
-              case ContactPoints.RFOOT:
-                targetX = pegPoint.pos.x + 5;
-                targetY = pegPoint.pos.y + 8;
-                break;
-            }
-
-            const origAccelX = gravity.maintainVelocity
-              ? targetX - contactPoint.pos.x + contactPoint.vel.x
-              : targetX - contactPoint.pos.x;
-            const origAccelY = gravity.maintainVelocity
-              ? targetY - contactPoint.pos.y + contactPoint.vel.y
-              : targetY - contactPoint.pos.y;
-            return { x: -origAccelX, y: -origAccelY };
+            // Since we want to stop all momentum, we simply apply an acceleration
+            // that cancels out the current velocity
+            return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
           }
 
           default:
