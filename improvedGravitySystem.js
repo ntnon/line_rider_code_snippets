@@ -227,7 +227,27 @@
 
           if (keyframeFrame === frameIndex) {
             // Apply gravity changes to the state
-            if (gravity.compute === "pop_impulse" || gravity._isPopImpulse) {
+            if (gravity.compute === "set_gravity") {
+              // Special handling for set_gravity
+              const affectedPoints = gravity.affectedPoints
+                ? Array.isArray(gravity.affectedPoints)
+                  ? gravity.affectedPoints
+                  : [gravity.affectedPoints]
+                : PointGroups.ALL;
+
+              // Store this gravity value for all affected contact points
+              for (let cp = 0; cp < 17; cp++) {
+                if (affectedPoints.includes(cp)) {
+                  this.contactPointStates[riderIndex][cp] = {
+                    x: gravity.gravityValue.x,
+                    y: gravity.gravityValue.y,
+                  };
+                }
+              }
+            } else if (
+              gravity.compute === "pop_impulse" ||
+              gravity._isPopImpulse
+            ) {
               // Special handling for pop impulse (both old and new format)
               const affectedPoints =
                 gravity.affectedPoints || gravity.contactPoints
@@ -535,11 +555,34 @@
     ];
   };
 
-  const setGravityFn = ({ x, y, contactPoints }) => {
-    return (t, g) => [[t, { x, y, contactPoints }]];
+  const setGravityFn = ({ x, y, contactPoints = null }) => {
+    return (t, g) => [
+      [
+        t,
+        {
+          type: "computed",
+          compute: "set_gravity",
+          gravityValue: { x, y },
+          affectedPoints: contactPoints || PointGroups.ALL,
+          _originalGravity: g, // Store original gravity for reference
+        },
+      ],
+    ];
   };
 
-  const defaultGravityFn = (t, g) => [[t, g]];
+  const defaultGravityFn = (t, g) => {
+    return (t) => [
+      [
+        t,
+        {
+          type: "computed",
+          compute: "set_gravity",
+          gravityValue: g,
+          affectedPoints: PointGroups.ALL,
+        },
+      ],
+    ];
+  };
 
   // Reimplementation of teleportTo using the consolidated system
   const teleportTo = ({ x, y, contactPoints }) => {
@@ -788,6 +831,31 @@
         const contactPoint = riderData.points[currentContactPoint];
 
         switch (gravity.compute) {
+          case "default_gravity": {
+            // Apply default gravity to all contact points
+            return {
+              x: gravity.gravityValue.x,
+              y: gravity.gravityValue.y,
+            };
+          }
+
+          case "set_gravity": {
+            // Check if this contact point should be affected
+            const affectedPoints = Array.isArray(gravity.affectedPoints)
+              ? gravity.affectedPoints
+              : [gravity.affectedPoints];
+
+            if (!affectedPoints.includes(currentContactPoint)) {
+              return { x: 0, y: 0 }; // No change for unaffected points
+            }
+
+            // For set_gravity, simply return the gravity value directly
+            return {
+              x: gravity.gravityValue.x,
+              y: gravity.gravityValue.y,
+            };
+          }
+
           case "pop_impulse": {
             // Check if this contact point should be affected
             const affectedPoints = Array.isArray(gravity.affectedPoints)
@@ -1010,7 +1078,7 @@
   applyGravity(
     riders.introRiders,
     [0, 1, 0],
-    popFn({ x: 0, y: -20 }),
+    popFn({ x: 0, y: -5 }),
     (i) => 40 * i,
   );
 
