@@ -23,6 +23,15 @@
   const scarf = [10, 11, 12, 13, 14, 15, 16];
   const notScarf = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
   const rider = [4, 5, 6, 7, 8, 9]; // Body parts only
+  const all = [...Array(17).keys()]; // All contact points (0-16)
+
+  // Create a PointGroups object for easy access to point groups
+  const PointGroups = {
+    ALL: all,
+    SLED: sled,
+    RIDER: rider,
+    SCARF: scarf,
+  };
 
   const defaultPointOffsets = {
     // Sled points
@@ -47,6 +56,26 @@
     [ContactPoints.SCARF_4]: { x: -5, y: -5.5 },
     [ContactPoints.SCARF_5]: { x: -7, y: -5.5 },
     [ContactPoints.SCARF_6]: { x: -9, y: -5.5 },
+  };
+
+  // Define a Shapes object to store different predefined shapes
+  const Shapes = {
+    DEFAULT: defaultPointOffsets,
+    // Add other shapes like STANDING, CROUCHING, etc. in the future
+  };
+
+  // Define velocity modes as constants
+  const VelocityMode = {
+    RESET: "reset",
+    MAINTAIN: "maintain",
+    ADOPT_TARGET: "adopt-target",
+  };
+
+  // Define position modes as constants
+  const PositionMode = {
+    DEFAULT_SHAPE: "default-shape",
+    MAINTAIN_RELATIVE: "maintain-relative",
+    CUSTOM_SHAPE: "custom-shape",
   };
 
   function getOffsetsRelativeTo(referencePoint) {
@@ -381,35 +410,38 @@
 
   const defaultGravityFn = (t, g) => [[t, g]];
 
-  // Absolute teleportation function, maintain existing velocity
+  // Reimplementation of teleportTo using the consolidated system
   const teleportTo = ({ x, y, contactPoints }) => {
-    return (t, g) => [
-      [
-        t,
-        {
-          type: "computed",
-          compute: "teleport_absolute",
-          x: x,
-          y: y,
-          contactPoints: contactPoints,
-        },
-      ],
-      [
-        t + 1,
-        {
-          type: "computed",
-          compute: "cancel_teleport_absolute",
-          x: x,
-          y: y,
-          contactPoints: contactPoints,
-        },
-      ],
-      [t + 2, g],
-    ];
+    return teleport({
+      targetPosition: { x, y },
+      affectedPoints: contactPoints || PointGroups.ALL,
+      positionMode: PositionMode.MAINTAIN_RELATIVE,
+      velocityMode: VelocityMode.MAINTAIN,
+    });
   };
 
-  // Relative teleportation function, maintain existing velocity
+  // Reimplementation of teleportToAndStop using the consolidated system
+  const teleportToAndStop = ({
+    x,
+    y,
+    contactPoints,
+    defaultPosition = false,
+  }) => {
+    return teleport({
+      targetPosition: { x, y },
+      affectedPoints: contactPoints || PointGroups.ALL,
+      positionMode: defaultPosition
+        ? PositionMode.DEFAULT_SHAPE
+        : PositionMode.MAINTAIN_RELATIVE,
+      velocityMode: VelocityMode.RESET,
+      rotation: 0,
+    });
+  };
+
+  // Reimplementation of teleportBy using the consolidated system
   const teleportBy = ({ x, y, contactPoints }) => {
+    // For relative movement, we need to use a custom function
+    // that applies an offset to each point's current position
     return (t, g) => [
       [t, { x: x, y: y, contactPoints: contactPoints }],
       [t + 1, { x: -x, y: -y, contactPoints: contactPoints }],
@@ -417,96 +449,133 @@
     ];
   };
 
-  // Teleportation functions - with velocity cancellation
-  const teleportToAndStop = ({
-    x,
-    y,
-    contactPoints,
-    defaultPosition = false,
-  }) => {
-    return (t, g) => [
-      [
-        t,
-        {
-          type: "computedFor instance, a contact point with velocity",
-          compute: "teleport_absolute",
-          x: x,
-          y: y,
-          contactPoints: contactPoints,
-          defaultPosition: defaultPosition,
-        },
-      ],
-      [
-        t + 1,
-        {
-          type: "computed",
-          compute: "teleport_absolute_stop",
-          x: x,
-          y: y,
-          contactPoints: contactPoints,
-          defaultPosition: defaultPosition,
-        },
-      ],
-      [t + 2, g],
-    ];
-  };
-
+  // Reimplementation of teleportByAndStop using the consolidated system
   const teleportByAndStop = ({ x, y, contactPoints }) => {
+    // Similar to teleportBy but stops momentum
     return (t, g) => [
       [t, { x: x, y: y, contactPoints: contactPoints }],
       [
         t + 1,
         {
           type: "computed",
-          compute: "cancelVelocity",
-          x: x,
-          y: y,
-          contactPoints: contactPoints,
+          compute: "teleport_velocity",
+          velocityMode: VelocityMode.RESET,
+          affectedPoints: contactPoints || PointGroups.ALL,
         },
       ],
       [t + 2, g],
     ];
   };
 
-  // NEW: Teleport sled to rider or rider to sled
-  const teleportSledToRider = () => {
+  /**
+   * Consolidated teleport function that handles all teleportation scenarios
+   * @param {Object} options Configuration options
+   */
+  const teleport = ({
+    targetContactPoint = null,
+    targetPosition = null,
+    affectedPoints = PointGroups.ALL,
+    positionMode = PositionMode.DEFAULT_SHAPE,
+    rotation = 0,
+    velocityMode = VelocityMode.RESET,
+    customShape = null,
+  }) => {
     return (t, g) => [
+      // Frame 1: Position adjustment
       [
         t,
         {
           type: "computed",
-          compute: "teleport_sled_to_rider_all_points",
+          compute: "teleport_position",
+          targetContactPoint,
+          targetPosition,
+          affectedPoints,
+          positionMode,
+          rotation,
+          customShape,
         },
       ],
+      // Frame 2: Velocity management
       [
         t + 1,
         {
           type: "computed",
-          compute: "cancel_all_velocity",
+          compute: "teleport_velocity",
+          velocityMode,
+          affectedPoints,
+          // Store the original gravity to restore in frame 3
+          originalGravity: g,
         },
       ],
+      // Frame 3: Return to normal gravity
       [t + 2, g],
     ];
   };
 
-  const teleportRiderToSled = () => {
-    return (t, g) => [
-      [
-        t,
-        {
-          type: "computed",
-          compute: "teleport_rider_to_sled_all_points",
-        },
-      ],
-      [
-        t + 1,
-        {
-          type: "computed",
-          compute: "cancel_all_velocity",
-        },
-      ],
-      [t + 2, g],
-    ];
+  // Convenience function: Teleport to absolute position
+  const teleportToPosition = (
+    x,
+    y,
+    affectedPoints = PointGroups.ALL,
+    rotation = 0,
+    velocityMode = VelocityMode.RESET,
+  ) => {
+    return teleport({
+      targetPosition: { x, y },
+      affectedPoints,
+      positionMode: PositionMode.DEFAULT_SHAPE,
+      rotation,
+      velocityMode,
+    });
+  };
+
+  // Convenience function: Teleport sled to rider
+  const teleportSledToRider = (maintainVelocity = false) => {
+    return teleport({
+      targetContactPoint: ContactPoints.BUTT,
+      affectedPoints: PointGroups.ALL,
+      positionMode: PositionMode.DEFAULT_SHAPE,
+      velocityMode: maintainVelocity
+        ? VelocityMode.MAINTAIN
+        : VelocityMode.RESET,
+    });
+  };
+
+  // Convenience function: Teleport rider to sled
+  const teleportRiderToSled = (maintainVelocity = false) => {
+    return teleport({
+      targetContactPoint: ContactPoints.PEG,
+      affectedPoints: PointGroups.ALL,
+      positionMode: PositionMode.DEFAULT_SHAPE,
+      velocityMode: maintainVelocity
+        ? VelocityMode.MAINTAIN
+        : VelocityMode.RESET,
+    });
+  };
+
+  // Convenience function: Reset to default position with rotation
+  const resetToDefaultPosition = (rotation = 0, maintainVelocity = false) => {
+    return teleport({
+      affectedPoints: PointGroups.ALL,
+      positionMode: PositionMode.DEFAULT_SHAPE,
+      rotation,
+      velocityMode: maintainVelocity
+        ? VelocityMode.MAINTAIN
+        : VelocityMode.RESET,
+    });
+  };
+
+  // Convenience function: Apply a custom shape
+  const applyShape = (shape, rotation = 0, maintainVelocity = false) => {
+    return teleport({
+      affectedPoints: PointGroups.ALL,
+      positionMode: PositionMode.CUSTOM_SHAPE,
+      customShape: shape,
+      rotation,
+      velocityMode: maintainVelocity
+        ? VelocityMode.MAINTAIN
+        : VelocityMode.RESET,
+    });
   };
 
   // ==== PART 9: ENHANCED CUSTOM GRAVITY FUNCTION ====
@@ -588,226 +657,58 @@
         const contactPoint = riderData.points[currentContactPoint];
 
         switch (gravity.compute) {
-          case "teleport_absolute": {
-            // If defaultPosition is true, handle this as a full reconstruction
-            if (gravity.defaultPosition === true) {
-              // If any contact points are specified, use first as reference point
-              // Otherwise default to PEG
-              const referencePointIndex =
-                gravity.contactPoints && gravity.contactPoints.length > 0
-                  ? gravity.contactPoints[0]
-                  : ContactPoints.PEG;
-
-              // If this is the reference point, move it to the target position
-              if (currentContactPoint === referencePointIndex) {
-                const accelX =
-                  gravity.x - contactPoint.pos.x - contactPoint.vel.x;
-                const accelY =
-                  gravity.y - contactPoint.pos.y - contactPoint.vel.y;
-                return { x: accelX, y: accelY };
-              }
-
-              // For all other points, reconstruct to default relative positions
-              const refPoint = riderData.points[referencePointIndex];
-              if (!refPoint) {
-                return { x: 0, y: 0 };
-              }
-
-              // Calculate where the reference will be after teleport (target position)
-              const refTargetX = gravity.x;
-              const refTargetY = gravity.y;
-
-              // Get offsets for all contact points relative to the reference point
-              const offsets = getOffsetsRelativeTo(referencePointIndex);
-              if (!offsets[currentContactPoint]) {
-                return { x: 0, y: 0 };
-              }
-
-              // For exact default positions without carrying over the angle,
-              // we need to use the exact offsets without any transformation
-
-              // Calculate target position using the absolute offset from default positions
-              const offsetX = offsets[currentContactPoint].x;
-              const offsetY = offsets[currentContactPoint].y;
-              const targetX = refTargetX + offsetX;
-              const targetY = refTargetY + offsetY;
-
-              // Calculate acceleration needed to reach target and zero velocity
-              // We subtract velonst accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
-              const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
-              return { x: accelX, y: accelY };
-            }
-
-            // Standard behavior when defaultPosition is false
+          case "teleport_position": {
             // Check if this contact point should be affected
-            if (
-              gravity.contactPoints &&
-              gravity.contactPoints.length > 0 &&
-              !gravity.contactPoints.includes(currentContactPoint)
-            ) {
-              return { x: 0, y: 0 }; // No change for unspecified points
+            if (!gravity.affectedPoints.includes(currentContactPoint)) {
+              return { x: 0, y: 0 }; // No change for unaffected points
             }
 
-            // Use first specified contact point as reference, or PEG if none specified
-            const referencePointIndex =
-              gravity.contactPoints && gravity.contactPoints.length > 0
-                ? gravity.contactPoints[0]
-                : 0;
-            const referencePoint = riderData.points[referencePointIndex];
+            // Calculate target position based on the options
+            let targetPosition = calculateTargetPosition({
+              contactPoint: currentContactPoint,
+              targetContactPoint: gravity.targetContactPoint,
+              targetPosition: gravity.targetPosition,
+              positionMode: gravity.positionMode,
+              rotation: gravity.rotation,
+              customShape: gravity.customShape,
+              riderData,
+            });
 
-            if (currentContactPoint === referencePointIndex) {
-              // Reference point goes directly to target
-              const accelX =
-                gravity.x - referencePoint.pos.x - referencePoint.vel.x;
-              const accelY =
-                gravity.y - referencePoint.pos.y - referencePoint.vel.y;
-              return { x: accelX, y: accelY };
-            } else {
-              if (
-                !gravity.contactPoints ||
-                gravity.contactPoints.includes(currentContactPoint)
-              ) {
-                // Other points maintain offset from reference point
-                const offsetX = contactPoint.pos.x - referencePoint.pos.x;
-                const offsetY = contactPoint.pos.y - referencePoint.pos.y;
-                const targetX = gravity.x + offsetX;
-                const targetY = gravity.y + offsetY;
-                const accelX =
-                  targetX - contactPoint.pos.x - contactPoint.vel.x;
-                const accelY =
-                  targetY - contactPoint.pos.y - contactPoint.vel.y;
-                return { x: accelX, y: accelY };
-              }
-            }
-            break;
-          }
+            // Calculate acceleration needed to reach target position
+            const accelX =
+              targetPosition.x - contactPoint.pos.x - contactPoint.vel.x;
+            const accelY =
+              targetPosition.y - contactPoint.pos.y - contactPoint.vel.y;
 
-          case "cancel_teleport_absolute": {
-            // Check if this contact point was affected
-            if (
-              gravity.contactPoints &&
-              gravity.contactPoints.length > 0 &&
-              !gravity.contactPoints.includes(currentContactPoint)
-            ) {
-              return { x: 0, y: 0 }; // No change for unspecified points
-            }
-
-            // Use same reference point logic as teleport_absolute
-            const referencePointIndex =
-              gravity.contactPoints && gravity.contactPoints.length > 0
-                ? gravity.contactPoints[0]
-                : 0;
-            const referencePoint = riderData.points[referencePointIndex];
-
-            if (currentContactPoint === referencePointIndex) {
-              // Cancel reference point's acceleration
-              const origAccelX =
-                gravity.x - referencePoint.pos.x + referencePoint.vel.x;
-              const origAccelY =
-                gravity.y - referencePoint.pos.y + referencePoint.vel.y;
-              return { x: -origAccelX, y: -origAccelY };
-            } else {
-              // Cancel other points' acceleration based on offset
-              const offsetX = contactPoint.pos.x - referencePoint.pos.x;
-              const offsetY = contactPoint.pos.y - referencePoint.pos.y;
-              const origTargetX = gravity.x + offsetX;
-              const origTargetY = gravity.y + offsetY;
-              const origAccelX =
-                origTargetX - contactPoint.pos.x + contactPoint.vel.x;
-              const origAccelY =
-                origTargetY - contactPoint.pos.y + contactPoint.vel.y;
-              return { x: -origAccelX, y: -origAccelY };
-            }
-          }
-
-          case "teleport_absolute_stop": {
-            // When using defaultPosition, always cancel velocity for ALL points
-            // This ensures everything comes to a complete stop after the teleport
-            if (gravity.defaultPosition === true) {
-              return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
-            }
-            // Standard behavior - only stop specified points
-            else {
-              if (
-                gravity.contactPoints &&
-                gravity.contactPoints.length > 0 &&
-                !gravity.contactPoints.includes(currentContactPoint)
-              ) {
-                return { x: 0, y: 0 }; // No change for unspecified points in normal mode
-              }
-              // Stop by cancelling current velocity for specified points
-              return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
-            }
-          }
-
-          case "cancelVelocity": {
-            // Check if this contact point should be affected
-            if (
-              gravity.contactPoints &&
-              gravity.contactPoints.length > 0 &&
-              !gravity.contactPoints.includes(currentContactPoint)
-            ) {
-              return { x: 0, y: 0 }; // No change for unspecified points
-            }
-            return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
-          }
-
-          case "teleport_sled_to_rider_all_points": {
-            // Find center of rider (BUTT position is a good reference)
-            const buttPoint = riderData.points[ContactPoints.BUTT];
-            if (!buttPoint) {
-              return { x: 0, y: 0 };
-            }
-
-            // Get offsets for all contact points relative to BUTT
-            const offsets = getOffsetsRelativeTo(ContactPoints.BUTT);
-            if (!offsets[currentContactPoint]) {
-              return { x: 0, y: 0 };
-            }
-
-            // Apply to ALL contact points to reset to default positions relative to BUTT
-            const offsetX = offsets[currentContactPoint].x;
-            const offsetY = offsets[currentContactPoint].y;
-            // Adjust position by adding velocity to compensate for frame difference
-            const targetX = buttPoint.pos.x + buttPoint.vel.x + offsetX;
-            const targetY = buttPoint.pos.y + buttPoint.vel.y + offsetY;
-
-            // Calculate acceleration needed to reach target and zero velocity
-            const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
-            const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
             return { x: accelX, y: accelY };
           }
 
-          case "cancel_all_velocity": {
-            // Cancel velocity for ALL points to ensure no unwanted momentum
-            // This ensures a clean stop for everything
+          case "teleport_velocity": {
+            // Check if this contact point should be affected
+            if (!gravity.affectedPoints.includes(currentContactPoint)) {
+              return { x: 0, y: 0 }; // No change for unaffected points
+            }
+
+            if (gravity.velocityMode === VelocityMode.RESET) {
+              // Cancel all velocity
+              return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
+            } else if (gravity.velocityMode === VelocityMode.MAINTAIN) {
+              // In maintain mode, we don't change existing velocity
+              return { x: 0, y: 0 };
+            } else if (gravity.velocityMode === VelocityMode.ADOPT_TARGET) {
+              // This would set velocity to match a target point's velocity
+              const targetVel = getTargetVelocity(
+                gravity.targetContactPoint,
+                riderData,
+              );
+              return {
+                x: targetVel.x - contactPoint.vel.x,
+                y: targetVel.y - contactPoint.vel.y,
+              };
+            }
+
+            // Default fallback
             return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
-          }
-
-          case "teleport_rider_to_sled_all_points": {
-            // Find center of sled (PEG position)
-            const pegPoint = riderData.points[ContactPoints.PEG];
-            if (!pegPoint) {
-              return { x: 0, y: 0 };
-            }
-
-            // Get offsets for all contact points relative to PEG
-            const offsets = getOffsetsRelativeTo(ContactPoints.PEG);
-            if (!offsets[currentContactPoint]) {
-              return { x: 0, y: 0 };
-            }
-
-            // Apply to ALL contact points to reset to default positions relative to PEG
-            const offsetX = offsets[currentContactPoint].x;
-            const offsetY = offsets[currentContactPoint].y;
-            // Adjust position by adding velocity to compensate for frame difference
-            const targetX = pegPoint.pos.x + pegPoint.vel.x + offsetX;
-            const targetY = pegPoint.pos.y + pegPoint.vel.y + offsetY;
-
-            // Calculate acceleration needed to reach target and zero velocity
-            const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
-            const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
-            return { x: accelX, y: accelY };
           }
 
           default:
@@ -824,6 +725,108 @@
       return gravity || GRAVITY_SYSTEM.defaultGravity || { x: 0, y: 0.175 };
     },
   });
+
+  /**
+   * Helper function to calculate target position for a contact point
+   */
+  function calculateTargetPosition({
+    contactPoint,
+    targetContactPoint,
+    targetPosition,
+    positionMode,
+    rotation = 0,
+    customShape,
+    riderData,
+  }) {
+    // Base reference point and position
+    let referencePoint, referencePosition;
+
+    // 1. Determine reference point and position
+    if (targetContactPoint !== null) {
+      referencePoint = targetContactPoint;
+      referencePosition = riderData.points[referencePoint].pos;
+      // Add velocity to compensate for frame difference
+      referencePosition = {
+        x: referencePosition.x + riderData.points[referencePoint].vel.x,
+        y: referencePosition.y + riderData.points[referencePoint].vel.y,
+      };
+    } else if (targetPosition !== null) {
+      // Use provided absolute position
+      referencePoint = null;
+      referencePosition = targetPosition;
+    } else {
+      // Default to current position of PEG
+      referencePoint = ContactPoints.PEG;
+      referencePosition = riderData.points[referencePoint].pos;
+      // Add velocity to compensate for frame difference
+      referencePosition = {
+        x: referencePosition.x + riderData.points[referencePoint].vel.x,
+        y: referencePosition.y + riderData.points[referencePoint].vel.y,
+      };
+    }
+
+    // 2. Calculate relative position based on mode
+    let relativeOffset = { x: 0, y: 0 };
+
+    if (positionMode === PositionMode.DEFAULT_SHAPE) {
+      // Get offset from default shape
+      const offsets = getOffsetsRelativeTo(referencePoint || ContactPoints.PEG);
+      relativeOffset = offsets[contactPoint];
+    } else if (positionMode === PositionMode.CUSTOM_SHAPE) {
+      // Get offset from custom shape
+      const shape = customShape || Shapes.DEFAULT;
+      relativeOffset = shape[contactPoint];
+    } else if (positionMode === PositionMode.MAINTAIN_RELATIVE) {
+      // Maintain current relative position to reference point
+      if (referencePoint !== null && contactPoint !== referencePoint) {
+        const refPos = riderData.points[referencePoint].pos;
+        const contactPos = riderData.points[contactPoint].pos;
+        relativeOffset = {
+          x: contactPos.x - refPos.x,
+          y: contactPos.y - refPos.y,
+        };
+      }
+    }
+
+    // 3. Apply rotation if needed
+    if (rotation !== 0) {
+      relativeOffset = rotateOffset(relativeOffset, rotation);
+    }
+
+    // 4. Calculate final target position
+    return {
+      x: referencePosition.x + relativeOffset.x,
+      y: referencePosition.y + relativeOffset.y,
+    };
+  }
+
+  /**
+   * Rotates an offset by the given angle in degrees
+   */
+  function rotateOffset(offset, angleDegrees) {
+    const angleRadians = angleDegrees * (Math.PI / 180);
+    const cos = Math.cos(angleRadians);
+    const sin = Math.sin(angleRadians);
+
+    return {
+      x: offset.x * cos - offset.y * sin,
+      y: offset.x * sin + offset.y * cos,
+    };
+  }
+
+  /**
+   * Gets velocity from a target contact point
+   */
+  function getTargetVelocity(targetContactPoint, riderData) {
+    if (targetContactPoint === null || !riderData.points[targetContactPoint]) {
+      return { x: 0, y: 0 };
+    }
+
+    return {
+      x: riderData.points[targetContactPoint].vel.x,
+      y: riderData.points[targetContactPoint].vel.y,
+    };
+  }
 
   // ==== PART 11: EXAMPLE RIDER SETUP ====
   const kramRider = new Rider(
@@ -894,7 +897,7 @@
   applyGravity(
     riders.introRiders,
     [0, 5, 0],
-    teleportToAndStop({ x: 0, y: 300, defaultPositions: true }), // stop after teleport
+    teleportRiderToSled(false), // stop after teleport
     (i) => 40 * i,
   );
 
@@ -920,8 +923,6 @@
     popFn,
     teleportTo,
     teleportBy,
-    teleportToAndStop,
-    teleportByAndStop,
     teleportSledToRider,
     teleportRiderToSled,
 
