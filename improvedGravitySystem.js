@@ -112,7 +112,8 @@
     FRAMES_PER_SECOND: 40,
     contactPointStates: {},
     lastProcessedFrame: -1,
-    defaultGravity: null, // Will be set from frame 0 or initial rider gravity
+    defaultGravity: { x: 0, y: 0.175 },
+    pendingResets: [], // For tracking scheduled gravity resets
 
     timestampToFrames([minutes, seconds, frames]) {
       return (
@@ -146,8 +147,65 @@
         frame++
       ) {
         this.processFrameKeyframes(frame);
+
+        // Process any scheduled resets for this frame
+        this.processScheduledResets(frame);
       }
       this.lastProcessedFrame = frameIndex;
+    },
+
+    // Process any scheduled gravity resets for a given frame
+    processScheduledResets(frameIndex) {
+      if (!this.pendingResets || this.pendingResets.length === 0) return;
+
+      for (let i = this.pendingResets.length - 1; i >= 0; i--) {
+        const reset = this.pendingResets[i];
+        if (reset.frameIndex === frameIndex) {
+          // Apply the reset to restore normal gravity
+          for (let pointIndex = 0; pointIndex < 17; pointIndex++) {
+            if (reset.affectedPoints.includes(pointIndex)) {
+              // Convert to simple gravity object to avoid type issues
+              this.contactPointStates[reset.riderIndex][pointIndex] = {
+                x: reset.gravity.x,
+                y: reset.gravity.y,
+              };
+            }
+          }
+
+          // Remove this reset from pending
+          this.pendingResets.splice(i, 1);
+        }
+      }
+
+      // Log for debugging
+      if (this.pendingResets.length > 0 && frameIndex % 100 === 0) {
+        console.log(
+          `Pending resets: ${this.pendingResets.length} at frame ${frameIndex}`,
+        );
+      }
+    },
+
+    // Schedule a gravity reset for a future frame
+    scheduleGravityReset(riderIndex, frameIndex, gravity, affectedPoints) {
+      if (!this.pendingResets) this.pendingResets = [];
+
+      // Ensure we have a clean gravity object
+      const cleanGravity = {
+        x: gravity.x || 0,
+        y: gravity.y || this.defaultGravity.y,
+      };
+
+      // Ensure affected points is an array
+      const ensuredAffectedPoints = Array.isArray(affectedPoints)
+        ? affectedPoints
+        : [affectedPoints];
+
+      this.pendingResets.push({
+        riderIndex,
+        frameIndex,
+        gravity: cleanGravity,
+        affectedPoints: ensuredAffectedPoints,
+      });
     },
 
     // Process keyframes for a specific frame
@@ -169,7 +227,49 @@
 
           if (keyframeFrame === frameIndex) {
             // Apply gravity changes to the state
-            if (gravity.type === "computed") {
+            if (gravity.compute === "pop_impulse" || gravity._isPopImpulse) {
+              // Special handling for pop impulse (both old and new format)
+              const affectedPoints =
+                gravity.affectedPoints || gravity.contactPoints
+                  ? Array.isArray(
+                      gravity.affectedPoints || gravity.contactPoints,
+                    )
+                    ? gravity.affectedPoints || gravity.contactPoints
+                    : [gravity.affectedPoints || gravity.contactPoints]
+                  : PointGroups.ALL;
+
+              // Store gravity in the correct format
+              const impulseValue = {
+                type: "computed",
+                compute: "pop_impulse",
+                impulse: {
+                  x: gravity.impulse ? gravity.impulse.x : gravity.x,
+                  y: gravity.impulse ? gravity.impulse.y : gravity.y,
+                },
+                affectedPoints: affectedPoints,
+                _originalGravity: gravity._originalGravity,
+              };
+
+              // Store this gravity value for all affected contact points
+              for (let cp = 0; cp < 17; cp++) {
+                if (affectedPoints.includes(cp)) {
+                  this.contactPointStates[riderIndex][cp] = impulseValue;
+                }
+              }
+
+              // If using old format, schedule a reset
+              if (gravity._isPopImpulse && !gravity.compute) {
+                const duration =
+                  typeof gravity._duration === "number" ? gravity._duration : 0;
+                const resetFrame = frameIndex + duration + 1;
+                this.scheduleGravityReset(
+                  riderIndex,
+                  resetFrame,
+                  gravity._originalGravity || this.defaultGravity,
+                  affectedPoints,
+                );
+              }
+            } else if (gravity.type === "computed") {
               // Store computed gravity instruction for runtime evaluation
               if (
                 !gravity.contactPoints ||
@@ -226,7 +326,27 @@
       this.initRiderStates(riderIndex);
 
       // Return current state for this contact point
-      return this.contactPointStates[riderIndex][contactPoint];
+      const gravityState = this.contactPointStates[riderIndex][contactPoint];
+
+      // If we have a computed type, return as is
+      if (gravityState && gravityState.type === "computed") {
+        // For pop_impulse, we need to make sure the impulse is in the right format
+        if (gravityState.compute === "pop_impulse" && gravityState.impulse) {
+          return {
+            type: "computed",
+            compute: "pop_impulse",
+            impulse: gravityState.impulse,
+            affectedPoints: gravityState.affectedPoints,
+          };
+        }
+        return gravityState;
+      }
+
+      // Return a clean gravity object without any special flags
+      return {
+        x: gravityState ? gravityState.x : this.defaultGravity.x,
+        y: gravityState ? gravityState.y : this.defaultGravity.y,
+      };
     },
 
     // Initialize the system with frame 0 gravity for all riders
@@ -397,9 +517,20 @@
   };
 
   // ==== PART 8: GRAVITY EFFECT FUNCTIONS ====
-  const popFn = ({ x, y, contactPoints }, duration = 0) => {
+  const popFn = ({ x, y, contactPoints = null }, duration = 0) => {
+    // Use the new computed type for more reliable handling
     return (t, g) => [
-      [t + 0, { x, y, contactPoints }],
+      [
+        t,
+        {
+          type: "computed",
+          compute: "pop_impulse",
+          impulse: { x, y },
+          affectedPoints: contactPoints || PointGroups.ALL,
+          _duration: duration, // Store duration for scheduling reset
+          _originalGravity: g, // Store original gravity for reset
+        },
+      ],
       [t + duration + 1, g],
     ];
   };
@@ -657,6 +788,27 @@
         const contactPoint = riderData.points[currentContactPoint];
 
         switch (gravity.compute) {
+          case "pop_impulse": {
+            // Check if this contact point should be affected
+            const affectedPoints = Array.isArray(gravity.affectedPoints)
+              ? gravity.affectedPoints
+              : [gravity.affectedPoints];
+
+            if (!affectedPoints.includes(currentContactPoint)) {
+              return { x: 0, y: 0 }; // No change for unaffected points
+            }
+
+            // Check if the impulse exists directly or as a property
+            const impulseX = gravity.impulse ? gravity.impulse.x : gravity.x;
+            const impulseY = gravity.impulse ? gravity.impulse.y : gravity.y;
+
+            // For pop impulse, simply return the impulse directly
+            return {
+              x: impulseX,
+              y: impulseY,
+            };
+          }
+
           case "teleport_position": {
             // Check if this contact point should be affected
             if (!gravity.affectedPoints.includes(currentContactPoint)) {
@@ -853,13 +1005,12 @@
 
   // ==== PART 12: APPLY GRAVITY EFFECTS ====
   // IMPORTANT: Set initial gravity at frame 0 for all riders
-  applyGravity(riders.introRiders, [0, 0, 0], setGravityFn({ x: 0, y: 0 }));
 
   // Example: Pop effect with contact-specific gravity
   applyGravity(
     riders.introRiders,
     [0, 1, 0],
-    popFn({ x: 0, y: 10, contactPoints: sled }),
+    popFn({ x: 0, y: -20 }),
     (i) => 40 * i,
   );
 
@@ -873,7 +1024,7 @@
   applyGravity(
     riders.introRiders,
     [0, 9, 20],
-    teleportBy(0, 10), // stop after teleport
+    popFn({ x: 0, y: 10 }), // stop after teleport
     (i) => 40 * i,
   );
 
