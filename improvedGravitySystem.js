@@ -853,51 +853,27 @@
 
   // ==== PART 12: APPLY GRAVITY EFFECTS ====
   // IMPORTANT: Set initial gravity at frame 0 for all riders
-  applyGravity(riders.introRiders, [0, 0, 0], setGravityFn({ x: 0, y: 0.15 }));
+  applyGravity(riders.introRiders, [0, 0, 0], setGravityFn({ x: 0, y: 0 }));
 
-  // // Apply scarf-specific gravity at frame 0
-  // applyGravity(
-  //   riders.introRiders,
-  //   [0, 0, 0],
-  //   setGravityFn({ x: 0, y: -50, contactPoints: scarf }),
-  // );
-
-  // // Example: Pop effect with contact-specific gravity
-  // applyGravity(
-  //   riders.introRiders,
-  //   [0, 1, 0],
-  //   popFn({ x: 2, y: 0, contactPoints: notScarf }),
-  //   (i) => 5 * i,
-  // );
-
-  // // Example: Teleport sled points
-  // applyGravity(
-  //   riders.introRiders,
-  //   [0, 5, 0],
-  //   teleportTo({ x: 100, y: -100, contactPoints: sled }),
-  //   (i) => 30 * i,
-  // );
-
-  // // Example: Teleport sled to rider position
-  // applyGravity(
-  //   riders.introRiders,
-  //   [0, 10, 0],
-  //   teleportSledToRider(true), // maintain velocity
-  //   (i) => 40 * i,
-  // );
-
-  // // Example: Teleport rider to sled position
-  // applyGravity(
-  //   riders.introRiders,
-  //   [0, 15, 0],
-  //   teleportRiderToSled(true), // stop after teleport
-  //   (i) => 40 * i,
-  // );
+  // Example: Pop effect with contact-specific gravity
+  applyGravity(
+    riders.introRiders,
+    [0, 1, 0],
+    popFn({ x: 0, y: 10, contactPoints: sled }),
+    (i) => 40 * i,
+  );
 
   applyGravity(
     riders.introRiders,
     [0, 5, 0],
     teleportRiderToSled(false), // stop after teleport
+    (i) => 40 * i,
+  );
+
+  applyGravity(
+    riders.introRiders,
+    [0, 9, 20],
+    teleportBy(0, 10), // stop after teleport
     (i) => 40 * i,
   );
 
