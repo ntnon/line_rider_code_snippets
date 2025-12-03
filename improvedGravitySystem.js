@@ -468,14 +468,14 @@
         t,
         {
           type: "computed",
-          compute: "teleport_sled_to_rider",
+          compute: "teleport_sled_to_rider_all_points",
         },
       ],
       [
         t + 1,
         {
           type: "computed",
-          compute: "cancel_sled_to_rider",
+          compute: "cancel_all_velocity",
         },
       ],
       [t + 2, g],
@@ -488,14 +488,14 @@
         t,
         {
           type: "computed",
-          compute: "teleport_rider_to_sled",
+          compute: "teleport_rider_to_sled_all_points",
         },
       ],
       [
         t + 1,
         {
           type: "computed",
-          compute: "cancelVelocity",
+          compute: "cancel_all_velocity",
         },
       ],
       [t + 2, g],
@@ -555,6 +555,7 @@
 
       // Handle computed gravity
       if (gravity && gravity.type === "computed") {
+        // Always use the previous frame data to avoid recursion
         const frameData = store
           .getState()
           .simulator.engine.engine.getFrame(frameIndex - 1);
@@ -687,12 +688,7 @@
             return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
           }
 
-          case "teleport_sled_to_rider": {
-            // Only affect sled contact points
-            if (!sled.includes(currentContactPoint)) {
-              return { x: 0, y: 0 };
-            }
-
+          case "teleport_sled_to_rider_all_points": {
             // Find center of rider (BUTT position is a good reference)
             const buttPoint = riderData.points[ContactPoints.BUTT];
             if (!buttPoint) {
@@ -705,11 +701,12 @@
               return { x: 0, y: 0 };
             }
 
-            // Calculate target position using the relative offset
+            // Apply to ALL contact points to reset to default positions relative to BUTT
             const offsetX = offsets[currentContactPoint].x;
             const offsetY = offsets[currentContactPoint].y;
-            const targetX = buttPoint.pos.x + offsetX;
-            const targetY = buttPoint.pos.y + offsetY;
+            // Adjust position by adding velocity to compensate for frame difference
+            const targetX = buttPoint.pos.x + buttPoint.vel.x + offsetX;
+            const targetY = buttPoint.pos.y + buttPoint.vel.y + offsetY;
 
             // Calculate acceleration needed to reach target and zero velocity
             const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
@@ -717,23 +714,13 @@
             return { x: accelX, y: accelY };
           }
 
-          case "cancel_sled_to_rider": {
-            // Only affect sled contact points
-            if (!sled.includes(currentContactPoint)) {
-              return { x: 0, y: 0 };
-            }
-
-            // Since we want to stop all momentum, we simply apply an acceleration
-            // that cancels out the current velocity
+          case "cancel_all_velocity": {
+            // Cancel velocity for ALL points to ensure no unwanted momentum
+            // This ensures a clean stop for everything
             return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
           }
 
-          case "teleport_rider_to_sled": {
-            // Only affect rider body contact points
-            if (!rider.includes(currentContactPoint)) {
-              return { x: 0, y: 0 };
-            }
-
+          case "teleport_rider_to_sled_all_points": {
             // Find center of sled (PEG position)
             const pegPoint = riderData.points[ContactPoints.PEG];
             if (!pegPoint) {
@@ -746,27 +733,17 @@
               return { x: 0, y: 0 };
             }
 
-            // Calculate target position using the relative offset
+            // Apply to ALL contact points to reset to default positions relative to PEG
             const offsetX = offsets[currentContactPoint].x;
             const offsetY = offsets[currentContactPoint].y;
-            const targetX = pegPoint.pos.x + offsetX;
-            const targetY = pegPoint.pos.y + offsetY;
+            // Adjust position by adding velocity to compensate for frame difference
+            const targetX = pegPoint.pos.x + pegPoint.vel.x + offsetX;
+            const targetY = pegPoint.pos.y + pegPoint.vel.y + offsetY;
 
             // Calculate acceleration needed to reach target and zero velocity
             const accelX = targetX - contactPoint.pos.x - contactPoint.vel.x;
             const accelY = targetY - contactPoint.pos.y - contactPoint.vel.y;
             return { x: accelX, y: accelY };
-          }
-
-          case "cancel_rider_to_sled": {
-            // Only affect rider body contact points
-            if (!rider.includes(currentContactPoint)) {
-              return { x: 0, y: 0 };
-            }
-
-            // Since we want to stop all momentum, we simply apply an acceleration
-            // that cancels out the current velocity
-            return { x: -contactPoint.vel.x, y: -contactPoint.vel.y };
           }
 
           default:
