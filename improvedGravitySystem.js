@@ -58,6 +58,31 @@
     [ContactPoints.SCARF_6]: { x: -9, y: -5.5 },
   };
 
+  const kramualPointOffsets = {
+    // Sled points
+    [ContactPoints.PEG]: { x: 0, y: 0 },
+    [ContactPoints.TAIL]: { x: -0.48, y: 0 },
+    [ContactPoints.NOSE]: { x: 16.9, y: 0 },
+    [ContactPoints.STRING]: { x: 20.7, y: 0 },
+
+    // Rider points
+    [ContactPoints.BUTT]: { x: 4.85, y: 0 },
+    [ContactPoints.SHOULDER]: { x: 6.42, y: 0 },
+    [ContactPoints.RHAND]: { x: 13.11, y: 0 },
+    [ContactPoints.LHAND]: { x: 12.61, y: 0 },
+    [ContactPoints.LFOOT]: { x: 12.57, y: 0 },
+    [ContactPoints.RFOOT]: { x: 12.24, y: 0 },
+
+    // Scarf points
+    [ContactPoints.SCARF_0]: { x: 8.42, y: 0.02 },
+    [ContactPoints.SCARF_1]: { x: 10.42, y: -0.02 },
+    [ContactPoints.SCARF_2]: { x: 12.42, y: 0.01 },
+    [ContactPoints.SCARF_3]: { x: 14.42, y: 0.06 },
+    [ContactPoints.SCARF_4]: { x: 16.42, y: 0.05 },
+    [ContactPoints.SCARF_5]: { x: 18.42, y: 0 },
+    [ContactPoints.SCARF_6]: { x: 20.42, y: -0.01 },
+  };
+
   // Define a Shapes object to store different predefined shapes
   const Shapes = {
     DEFAULT: defaultPointOffsets,
@@ -142,7 +167,9 @@
     updateStatesUpToFrame(frameIndex) {
       // Process all frames from last processed to current
       for (
-        let frame = this.lastProcessedFrame + 1;
+        let frame =
+          window.store.getState().simulator.engine.engine._computed._frames
+            .length;
         frame <= frameIndex;
         frame++
       ) {
