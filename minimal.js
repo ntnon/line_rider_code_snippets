@@ -251,9 +251,10 @@
     targetContactPoint = null,
     targetPosition = null,
     affectedPoints = PointGroups.ALL,
-    shape = Shapes.KRAMUAL,
+    shape = Shapes.DEFAULT,
     rotation = 0,
     velocityMode = VelocityMode.RESET,
+    velocityOffset = null, // New parameter: {x: 0, y: 0} to add velocity
     customShape = null,
   }) => {
     return (t, g) => [
@@ -271,13 +272,14 @@
           customShape,
         },
       ],
-      // Frame 2: Velocity management
+      // Frame 2: Velocity management + optional velocity offset
       [
         t + 1,
         {
           type: "computed",
           compute: "teleport_velocity",
           velocityMode,
+          velocityOffset, // Pass the velocity offset to be applied
           affectedPoints,
           // Store the original gravity to restore in frame 3
           originalGravity: g,
@@ -288,11 +290,27 @@
     ];
   };
 
-  const resetToDefaultPosition = (rotation = 0) => {
+  const kramual = (rotation = 0) => {
+    return teleport({
+      targetContactPoint: ContactPoints.TAIL,
+      affectedPoints: PointGroups.ALL,
+      shape: Shapes.KRAMUAL,
+      rotation,
+      velocityMode: VelocityMode.ADOPT_TARGET,
+    });
+  };
+
+  // Kramual with upward velocity after teleport
+  const kramualWithLaunch = (
+    rotation = 0,
+    launchVelocity = { x: 0, y: -5 },
+  ) => {
     return teleport({
       affectedPoints: PointGroups.ALL,
+      shape: Shapes.KRAMUAL,
       rotation,
       velocityMode: VelocityMode.RESET,
+      velocityOffset: launchVelocity,
     });
   };
 
@@ -400,22 +418,34 @@
               return { x: 0, y: 0 };
             }
 
+            let velocityChange = { x: 0, y: 0 };
+
+            // First, handle the velocity mode
             if (gravity.velocityMode === "reset") {
-              return { x: -contactPointData.vel.x, y: -contactPointData.vel.y };
+              velocityChange = {
+                x: -contactPointData.vel.x,
+                y: -contactPointData.vel.y,
+              };
             } else if (gravity.velocityMode === "maintain") {
-              return { x: 0, y: 0 };
+              velocityChange = { x: 0, y: 0 };
             } else if (gravity.velocityMode === "adopt-target") {
               const targetVel = getTargetVelocity(
                 gravity.targetContactPoint,
                 riderData,
               );
-              return {
+              velocityChange = {
                 x: targetVel.x - contactPointData.vel.x,
                 y: targetVel.y - contactPointData.vel.y,
               };
             }
 
-            return { x: -contactPointData.vel.x, y: -contactPointData.vel.y };
+            // Then, add the velocity offset if provided
+            if (gravity.velocityOffset) {
+              velocityChange.x += gravity.velocityOffset.x;
+              velocityChange.y += gravity.velocityOffset.y;
+            }
+
+            return velocityChange;
           }
 
           default:
@@ -437,48 +467,52 @@
     targetPosition,
     shape,
     rotation = 0,
-    customShape,
     riderData,
   }) {
-    // Base reference point and position
-    let referencePoint, referencePosition;
+    // Step 1: Resolve target XY position
+    let anchorPosition;
 
-    // 1. Determine reference point and position
-    if (targetContactPoint !== null) {
-      referencePoint = targetContactPoint;
-      referencePosition = riderData.points[referencePoint].pos;
-      // Add velocity to compensate for frame difference
-      referencePosition = {
-        x: referencePosition.x + riderData.points[referencePoint].vel.x,
-        y: referencePosition.y + riderData.points[referencePoint].vel.y,
+    if (targetPosition !== null) {
+      // Use the explicitly provided position for the anchor
+      anchorPosition = targetPosition;
+    } else if (targetContactPoint !== null) {
+      // Use the current position of the target contact point as the anchor position
+      const targetPoint = riderData.points[targetContactPoint];
+      anchorPosition = {
+        x: targetPoint.pos.x + targetPoint.vel.x,
+        y: targetPoint.pos.y + targetPoint.vel.y,
       };
-    } else if (targetPosition !== null) {
-      // Use provided absolute position
-      referencePoint = null;
-      referencePosition = targetPosition;
     } else {
-      // Default to current position of PEG
-      referencePoint = ContactPoints.PEG;
-      referencePosition = riderData.points[referencePoint].pos;
-      // Add velocity to compensate for frame difference
-      referencePosition = {
-        x: referencePosition.x + riderData.points[referencePoint].vel.x,
-        y: referencePosition.y + riderData.points[referencePoint].vel.y,
+      // Default: use PEG's current position
+      const pegPoint = riderData.points[ContactPoints.PEG];
+      anchorPosition = {
+        x: pegPoint.pos.x + pegPoint.vel.x,
+        y: pegPoint.pos.y + pegPoint.vel.y,
       };
+      targetContactPoint = ContactPoints.PEG; // Set for offset calculation
     }
 
-    // 2. Calculate relative position based on mode
-    let relativeOffset = shape[contactPoint];
+    // Step 2: Get the offset of the anchor point in the shape
+    const anchorOffset = shape[targetContactPoint || ContactPoints.PEG];
 
-    // 3. Apply rotation if needed
+    // Step 3: Get the offset of the contact point we're calculating for
+    const contactPointOffset = shape[contactPoint];
+
+    // Step 4: Calculate relative offset from anchor to contact point
+    let relativeOffset = {
+      x: contactPointOffset.x - anchorOffset.x,
+      y: contactPointOffset.y - anchorOffset.y,
+    };
+
+    // Step 5: Apply rotation if needed
     if (rotation !== 0) {
       relativeOffset = rotateOffset(relativeOffset, rotation);
     }
 
-    // 4. Calculate final target position
+    // Step 6: Calculate final position (anchor position + relative offset)
     return {
-      x: referencePosition.x + relativeOffset.x,
-      y: referencePosition.y + relativeOffset.y,
+      x: anchorPosition.x + relativeOffset.x,
+      y: anchorPosition.y + relativeOffset.y,
     };
   }
 
@@ -530,8 +564,39 @@
   );
 
   const riders = {
-    introRiders: generateRiderArray(introRider, 2),
+    introRiders: generateRiderArray(introRider, 1),
   };
+  const Intervals = {
+    simultaneous: () => 0,
+    stagger: (frames) => (i) => i * frames,
+    exponential:
+      (base, scale = 1) =>
+      (i) =>
+        Math.pow(base, i) * scale,
+    sine: (period, amplitude) => (i) => Math.sin(i * period) * amplitude,
+  };
+
+  // Version with explicit timing control
+  const sequence =
+    (...steps) =>
+    (t, g) => {
+      let currentTime = t;
+      const allKeyframes = [];
+
+      for (const step of steps) {
+        if (typeof step === "number") {
+          // It's a wait duration
+          currentTime += step;
+        } else {
+          // It's an effect function
+          const keyframes = step(currentTime, g);
+          allKeyframes.push(...keyframes);
+          currentTime = keyframes[keyframes.length - 1][0] + 1;
+        }
+      }
+
+      return allKeyframes;
+    };
 
   // ==== PART 12: APPLY GRAVITY EFFECTS ====
   // IMPORTANT: Set initial gravity at frame 0 for all riders
@@ -541,47 +606,60 @@
     riders.introRiders,
     [0, 1, 0],
     popFn({ x: 0, y: -5 }),
-    (i) => 40 * i,
+    Intervals.stagger(40),
   );
 
   applyGravity(
     riders.introRiders,
     [0, 5, 0],
     teleportRiderToSled(), // stop after teleport
-    (i) => 40 * i,
+    Intervals.stagger(40),
   );
 
   applyGravity(
     riders.introRiders,
-    [0, 7, 20],
-    resetToDefaultPosition(90), // stop after teleport
-    (i) => 40 * i,
+    [0, 6, 0],
+    kramualWithLaunch(0, { x: 0, y: 10 }), // stop after teleport
+    Intervals.stagger(40),
+  );
+  applyGravity(
+    riders.introRiders,
+    [0, 7, 0],
+    teleport({
+      affectedPoints: PointGroups.ALL,
+      shape: Shapes.KRAMUAL,
+      rotation: -90,
+      velocityMode: VelocityMode.RESET,
+      velocityOffset: { x: -1, y: 0 },
+    }), // stop after teleport
+    Intervals.stagger(40),
   );
 
   applyGravity(
     riders.introRiders,
-    [0, 8, 20],
-    resetToDefaultPosition(180), // stop after teleport
-    (i) => 40 * i,
+    [0, 9, 0],
+    teleport({
+      targetContactPoint: ContactPoints.TAIL,
+      affectedPoints: PointGroups.ALL,
+      shape: Shapes.KRAMUAL,
+      rotation: 180,
+      velocityMode: VelocityMode.RESET,
+      velocityOffset: { x: -2, y: 0 },
+    }), // stop after teleport
+    Intervals.stagger(40),
   );
 
-  applyGravity(
-    riders.introRiders,
-    [0, 9, 20],
-    resetToDefaultPosition(270), // stop after teleport
-    (i) => 40 * i,
-  );
   applyGravity(
     riders.introRiders,
     [0, 10, 5],
     popFn({ x: 30, y: -5 }), // stop after teleport
-    (i) => 40 * i,
+    Intervals.stagger(40),
   );
   applyGravity(
     riders.introRiders,
     [0, 10, 10],
     setGravityFn({ x: 0, y: -0.175 }), // stop after teleport
-    (i) => 40 * i,
+    Intervals.stagger(40),
   );
 
   // ==== PART 13: COMMIT CHANGES ====
