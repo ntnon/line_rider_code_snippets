@@ -731,38 +731,41 @@
   };
 
   // Convenience function: Teleport sled to rider
-  const teleportSledToRider = (maintainVelocity = false) => {
+  const teleportSledToRider = () => {
     return teleport({
       targetContactPoint: ContactPoints.BUTT,
       affectedPoints: PointGroups.ALL,
       positionMode: PositionMode.DEFAULT_SHAPE,
-      velocityMode: maintainVelocity
-        ? VelocityMode.MAINTAIN
-        : VelocityMode.RESET,
+      velocityMode: VelocityMode.RESET,
     });
   };
 
   // Convenience function: Teleport rider to sled
-  const teleportRiderToSled = (maintainVelocity = false) => {
+  const teleportRiderToSled = () => {
     return teleport({
       targetContactPoint: ContactPoints.PEG,
       affectedPoints: PointGroups.ALL,
       positionMode: PositionMode.DEFAULT_SHAPE,
-      velocityMode: maintainVelocity
-        ? VelocityMode.MAINTAIN
-        : VelocityMode.RESET,
+      velocityMode: VelocityMode.RESET,
     });
   };
 
   // Convenience function: Reset to default position with rotation
-  const resetToDefaultPosition = (rotation = 0, maintainVelocity = false) => {
+  const resetToDefaultPosition = (rotation = 0) => {
     return teleport({
       affectedPoints: PointGroups.ALL,
       positionMode: PositionMode.DEFAULT_SHAPE,
       rotation,
-      velocityMode: maintainVelocity
-        ? VelocityMode.MAINTAIN
-        : VelocityMode.RESET,
+      velocityMode: VelocityMode.RESET,
+    });
+  };
+
+  const resetToKramualPosition = (rotation = 0) => {
+    return teleport({
+      affectedPoints: PointGroups.ALL,
+      positionMode: PositionMode.KRAMUAL,
+      rotation,
+      velocityMode: VelocityMode.RESET,
     });
   };
 
@@ -1112,14 +1115,40 @@
   applyGravity(
     riders.introRiders,
     [0, 5, 0],
-    teleportRiderToSled(false), // stop after teleport
+    teleportRiderToSled(), // stop after teleport
+    (i) => 40 * i,
+  );
+
+  applyGravity(
+    riders.introRiders,
+    [0, 7, 20],
+    resetToDefaultPosition(90), // stop after teleport
+    (i) => 40 * i,
+  );
+
+  applyGravity(
+    riders.introRiders,
+    [0, 8, 20],
+    resetToDefaultPosition(180), // stop after teleport
     (i) => 40 * i,
   );
 
   applyGravity(
     riders.introRiders,
     [0, 9, 20],
-    popFn({ x: 0, y: 10 }), // stop after teleport
+    resetToDefaultPosition(270), // stop after teleport
+    (i) => 40 * i,
+  );
+  applyGravity(
+    riders.introRiders,
+    [0, 10, 5],
+    popFn({ x: 30, y: -5 }), // stop after teleport
+    (i) => 40 * i,
+  );
+  applyGravity(
+    riders.introRiders,
+    [0, 10, 10],
+    setGravityFn({ x: 0, y: -0.175 }), // stop after teleport
     (i) => 40 * i,
   );
 
