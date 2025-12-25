@@ -139,6 +139,32 @@
     );
   }
 
+  function normalizeRiderTargets(targets) {
+    // Accepts Rider[], or [Rider, contactPoints[]][]
+    if (!Array.isArray(targets)) return [];
+    if (targets.length === 0) return [];
+    if (targets[0] instanceof Rider) {
+      // Expand to all contact points
+      return targets.map(rider => [rider, all]);
+    }
+    // Already [rider, contactPoints[]] pairs
+    return targets.map(([rider, contactPoints]) => [rider, contactPoints || all]);
+  }
+
+  function getLastDefinedGravityForContactPoint(riderKeyframes, frameIndex, contactPoint) {
+    let lastGravity = { x: 0, y: 0.175 }; // Fallback if nothing found
+    for (let i = 0; i < riderKeyframes.length; i++) {
+      const [timestamp, g] = riderKeyframes[i];
+      const keyframeFrame = timestampToFrames(timestamp);
+      if (keyframeFrame > frameIndex) break;
+      if (g.contactPoint === undefined || g.contactPoint === contactPoint) {
+        lastGravity = g;
+      }
+    }
+    return lastGravity;
+  }
+
+
   // ==== PART 5: RIDER CLASS ====
   class Rider {
     constructor(
@@ -186,25 +212,24 @@
 
   // ==== PART 6: GRAVITY UTILITY FUNCTIONS ====
   function applyGravity(
-    riders,
-    baseTimestamp,
-    keyframeFn,
-    intervalFn = (i) => 0,
+      riderTargets,
+      baseTimestamp,
+      keyframeFn,
+      intervalFn = (i) => 0,
   ) {
-    if (!riders) throw new Error("riders is required");
-    if (!Array.isArray(riders)) riders = [riders];
+    if (!riderTargets) throw new Error("riderTargets is required");
     if (!Array.isArray(baseTimestamp))
-      throw new Error(
-        "baseTimestamp must be an array [minutes, seconds, frames]",
-      );
+      throw new Error("baseTimestamp must be an array [minutes, seconds, frames]");
 
+    const pairs = normalizeRiderTargets(riderTargets);
     const timeAsFrames = timestampToFrames(baseTimestamp);
 
-    riders.forEach((rider, i) => {
+    pairs.forEach(([rider, contactPoints], i) => {
       const t = timeAsFrames + intervalFn(i);
-      rider.addGravityKeyframes(keyframeFn(t, rider.defaultGravity));
+      rider.addGravityKeyframes(keyframeFn(t, rider.defaultGravity, contactPoints));
     });
   }
+
 
   function generateRiderArray(originalRider, count, modifiers = {}) {
     if (!originalRider.id) throw new Error("Base rider must have an id");
@@ -225,16 +250,14 @@
   }
 
   // ==== PART 8: GRAVITY EFFECT FUNCTIONS ====
-  const popFn = ({ x, y, contactPoints }, duration = 0) => {
-    return (t, g) => [
-      [t + 0, { x, y, contactPoints }],
-      [t + duration + 1, g],
-    ];
-  };
+  const setGravityFn = ({ x, y }) =>
+      (t, g, contactPoints = all) => contactPoints.map(cp => [t, { x, y, contactPoint: cp }]);
 
-  const setGravityFn = ({ x, y, contactPoints }) => {
-    return (t, g) => [[t, { x, y, contactPoints }]];
-  };
+  const popFn = ({ x, y }, duration = 0) =>
+      (t, g, contactPoints = all) => contactPoints.flatMap(cp => [
+        [t, { x, y, contactPoint: cp }],
+        [t + duration + 1, g],
+      ]);
 
   /**
    * Consolidated teleport function that handles all teleportation scenarios
@@ -341,11 +364,10 @@
         }
       }
 
-      // Default if no gravity keyframe exists
-      if (!gravity) {
-        console.warn("No gravity keyframe found for rider", currentRiderIndex, "at frame", frameIndex);
-        return { x: 0, y: 0.175 };
+      if (gravity.contactPoint !== undefined && gravity.contactPoint !== currentContactPoint) {
+        return getLastDefinedGravityForContactPoint(riderKeyframes, frameIndex, currentContactPoint);
       }
+
 
       // Handle computed instructions
       if (gravity.type === "computed") {
@@ -357,8 +379,7 @@
         const contactPointData = riderData?.points?.[currentContactPoint];
 
         if (!contactPointData) {
-          console.warn("No contact point data found for rider", currentRiderIndex, "at frame", frameIndex)
-          return { x: 0, y: 0.175 };
+          return getLastDefinedGravityForContactPoint(riderKeyframes, frameIndex, currentContactPoint);
         }
 
         switch (gravity.compute) {
@@ -411,8 +432,7 @@
           }
 
           default:
-            console.warn("Unknown compute type:", gravity.compute, "for gravity keyframe", gravity);
-            return { x: 0, y: 0.175 };
+            return getLastDefinedGravityForContactPoint(riderKeyframes, frameIndex, currentContactPoint);
         }
       }
 
@@ -639,6 +659,17 @@
 
 
  */
+
+  applyGravity(
+      [[riders.introRiders[1], [ContactPoints.RHAND, ContactPoints.LHAND]]],
+      [0, 1, 0],
+      popFn({ x: 0, y: -5 }, 100)
+  );
+  applyGravity(
+      [[riders.introRiders[1], [ContactPoints.TAIL]]],
+      [0, 1, 5],
+      setGravityFn({ x: 0, y: 0.6 })
+  );
   // ==== PART 13: COMMIT CHANGES ====
   if (window.Actions) {
     const allRiders = Object.values(riders).flat();
