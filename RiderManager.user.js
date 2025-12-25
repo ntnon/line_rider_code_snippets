@@ -43,6 +43,43 @@
             }
         }
 
+        function makeRider(group, props = {}) {
+            if (!group) throw new Error("Rider must have a group. Either 'grup' or ['group1', 'group2']");
+            const groupArray = Array.isArray(groups) ? groups : [groups];
+            return {
+                groups: groupArray,
+                startPosition: props.startPosition || { x: 0, y: 0 },
+                startVelocity: props.startVelocity || { x: 0, y: 0.4 },
+                startAngle: props.startAngle || 0,
+                copy() {
+                    return makeRider([...this.groups], {
+                        startPosition: { ...this.startPosition },
+                        startVelocity: { ...this.startVelocity },
+                        startAngle: this.startAngle,
+                        ...props
+                    });
+                },
+                ...props
+            };
+        }
+
+        function repeatRider(rider, count, group, modifiers = {}) {
+            if (!groups) throw new Error("Rider must have a group (string or array)");
+            const groupArray = Array.isArray(groups) ? groups : [groups];
+            return Array.from({ length: count }, (_, i) => {
+                const newRider = { ...rider, groups: groupArray };
+                if (modifiers.startPosition)
+                    newRider.startPosition = modifiers.startPosition(rider.startPosition, i);
+                if (modifiers.startVelocity)
+                    newRider.startVelocity = modifiers.startVelocity(rider.startVelocity, i);
+                if (modifiers.startAngle)
+                    newRider.startAngle = modifiers.startAngle(rider.startAngle, i);
+                if (modifiers.groups)
+                    newRider.groups = modifiers.groups(newRider.groups, i);
+                return newRider;
+            });
+        }
+
         function addToGroup(groupName, ridersToAdd) {
             const toAdd = Array.isArray(ridersToAdd) ? ridersToAdd : [ridersToAdd];
             toAdd.forEach(rider => {
@@ -79,26 +116,6 @@
             return groupMap;
         }
 
-        function generateRiderArray(originalRider, count, modifiers = {}) {
-            if (!originalRider.id) throw new Error("Base rider must have an id");
-
-            return Array.from({ length: count }, (_, i) => {
-                const rider = originalRider.copy();
-                rider.id = `${originalRider.id}_${i}`;
-
-                if (modifiers.startPosition)
-                    rider.startPosition = modifiers.startPosition(rider.startPosition, i);
-                if (modifiers.startVelocity)
-                    rider.startVelocity = modifiers.startVelocity(rider.startVelocity, i);
-                if (modifiers.startAngle)
-                    rider.startAngle = modifiers.startAngle(rider.startAngle, i);
-                if (modifiers.groups)
-                    rider.groups = modifiers.groups(rider.groups, i);
-
-                return rider;
-            });
-        }
-
         return {
             getRiders,
             setRiders,
@@ -107,7 +124,8 @@
             removeFromGroup,
             getGroup,
             allGroups,
-            generateRiderArray
+            makeRider,
+            repeatRider,
         };
     })();
 
