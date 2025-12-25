@@ -241,7 +241,7 @@
    * @param {Object} options Configuration options
    */
   const teleport = ({
-    targetContactPoint = null,
+    anchorPoint: anchorPoint = null,
     targetPosition = null,
     isAbsolute = false,
     affectedPoints = PointGroups.ALL,
@@ -256,7 +256,7 @@
         {
           type: "computed",
           compute: "teleport_position",
-          anchorPoint: targetContactPoint,
+          anchorPoint: anchorPoint,
           targetPosition,
           isAbsolute,
           affectedPoints,
@@ -281,27 +281,6 @@
     ];
   };
 
-  const kramual = (rotation = 0) => {
-    return teleport({
-      anchorPoint: ContactPoints.TAIL,
-      affectedPoints: PointGroups.ALL,
-      shape: Shapes.KRAMUAL,
-      rotation,
-    });
-  };
-
-  // Kramual with upward velocity after teleport
-  const kramualWithLaunch = (
-    rotation = 0,
-    launchVelocity = { x: 0, y: -5 },
-  ) => {
-    return teleport({
-      affectedPoints: PointGroups.ALL,
-      shape: Shapes.KRAMUAL,
-      rotation,
-      exitVelocity: launchVelocity,
-    });
-  };
 
   // Convenience function: Teleport rider to sled
   const teleportRiderToSled = () => {
@@ -364,6 +343,7 @@
 
       // Default if no gravity keyframe exists
       if (!gravity) {
+        console.warn("No gravity keyframe found for rider", currentRiderIndex, "at frame", frameIndex);
         return { x: 0, y: 0.175 };
       }
 
@@ -377,6 +357,7 @@
         const contactPointData = riderData?.points?.[currentContactPoint];
 
         if (!contactPointData) {
+          console.warn("No contact point data found for rider", currentRiderIndex, "at frame", frameIndex)
           return { x: 0, y: 0.175 };
         }
 
@@ -430,12 +411,12 @@
           }
 
           default:
+            console.warn("Unknown compute type:", gravity.compute, "for gravity keyframe", gravity);
             return { x: 0, y: 0.175 };
         }
       }
 
-      // Regular gravity
-      return gravity || { x: 0, y: 0.175 };
+      return gravity;
     },
   });
 
@@ -444,7 +425,7 @@
    */
   function calculateTargetPosition({
                                      contactPoint,
-                                     targetContactPoint = null,
+                                     anchorPoint = null,
                                      targetPosition,
                                      isAbsolute,
                                      shape,
@@ -452,14 +433,21 @@
                                      riderData,
                                    }) {
     // Determine anchor (default to PEG)
-    const anchorPoint = targetContactPoint !== null ? targetContactPoint : ContactPoints.PEG;
+    let anchor;
+    if (anchorPoint !== null && anchorPoint !== undefined) {
+      anchor = anchorPoint;
+    } else {
+      const keys = Object.keys(riderData.points);
+      if (keys.length === 0) throw new Error("No points in riderData");
+      anchor = keys[0];
+    }
 
     // Use provided shape or fallback to current
-    const usedShape = shape || defaultPointOffsets;
+    const shapeToUse = resolveShape(shape, riderData, anchor);
 
     // Get offsets in the shape
-    const anchorOffset = usedShape[anchorPoint];
-    const contactPointOffset = usedShape[contactPoint];
+    const anchorOffset = shapeToUse[anchor];
+    const contactPointOffset = shapeToUse[contactPoint];
 
     // Calculate relative offset from anchor to contact point
     let relativeOffset = {
@@ -481,7 +469,7 @@
     }
 
     // Relative mode: anchor is at current position, add offset if provided
-    const anchorData = riderData.points[anchorPoint];
+    const anchorData = riderData.points[anchor];
     const anchorPosition = {
       x: anchorData.pos.x + anchorData.vel.x,
       y: anchorData.pos.y + anchorData.vel.y,
@@ -492,6 +480,10 @@
       x: anchorPosition.x + relativeOffset.x + positionOffset.x,
       y: anchorPosition.y + relativeOffset.y + positionOffset.y,
     };
+  }
+
+  function resolveShape(shape, riderData, anchor) {
+    return shape || buildCurrentShape(riderData, anchor);
   }
 
   /**
@@ -509,7 +501,7 @@
   }
 
   // Helper to build current shape from riderData
-  function buildCurrentShape(riderData, anchor = ContactPoints.PEG) {
+  function buildCurrentShape(riderData, anchor) {
     const anchorPos = riderData.points[anchor].pos;
     const shape = {};
     for (const cp in riderData.points) {
@@ -534,15 +526,6 @@
   }
 
   // ==== PART 11: EXAMPLE RIDER SETUP ====
-  const kramRider = new Rider(
-    "kramRider",
-    { x: 0, y: 0 },
-    { x: 0, y: 0 },
-    true,
-    90,
-    globalStartGravity,
-  );
-
   const introRider = new Rider(
     "introRider",
     { x: 0, y: 300 },
@@ -552,9 +535,15 @@
     { x: 0, y: 0.15 },
   );
 
+  const secondRider = introRider.copy();
+  secondRider.id = "secondRider";
+  secondRider.startPosition = { x: 100, y: 800 };
+
   const riders = {
-    introRiders: generateRiderArray(introRider, 3),
+    introRiders: generateRiderArray(introRider, 8),
+    secondRiders: generateRiderArray(secondRider, 8),
   };
+
   const Intervals = {
     simultaneous: () => 0,
     stagger: (frames) => (i) => i * frames,
@@ -565,7 +554,6 @@
     sine: (period, amplitude) => (i) => Math.sin(i * period) * amplitude,
   };
 
-  // Version with explicit timing control
   const sequence =
     (...steps) =>
     (t, g) => {
@@ -586,91 +574,71 @@
 
       return allKeyframes;
     };
+  function sequenceAt(pairs) {
+    return (t, g) => {
+      const allKeyframes = [];
+      for (const [timestamp, effectFn] of pairs) {
+        const frameTime = Array.isArray(timestamp) ? timestampToFrames(timestamp) : timestamp;
+        const keyframes = effectFn(t + frameTime, g); // Add t (with stagger) to each timestamp
+        allKeyframes.push(...keyframes);
+      }
+      return allKeyframes;
+    };
+  }
 
   // ==== PART 12: APPLY GRAVITY EFFECTS ====
   // IMPORTANT: Set initial gravity at frame 0 for all riders
-
-  // Example: Pop effect with contact-specific gravity
-
+// All riders
+  applyGravity(
+      Object.values(riders).flat(),
+          [0, 0, 0],
+      setGravityFn({ x: 0, y: 0 })
+  );
+// First riders
   applyGravity(
       riders.introRiders,
       [0, 0, 0],
-      setGravityFn({ x: 0, y: 0 }),
-  );
-
+      sequenceAt([
+          [[0,2,0], popFn({ x: 2, y: 0 })],
+          [[0,35,2], popFn({ x: -0.001, y: 0 })],
+      ]),
+      Intervals.stagger(128)
+  )
+// Second riders
   applyGravity(
-      riders.introRiders,
-      [0, 1, 0],
-      setGravityFn({ x: 0, y: 0.175 }),
-      Intervals.stagger(40),
+      riders.secondRiders,
+      [0, 35, 0],
+      setGravityFn(introRider.defaultGravity),
+      Intervals.stagger(128),
   );
 
+  // First and Second riders
   applyGravity(
-      riders.introRiders,
-      [0, 6, 0],
-      teleport({
-        targetPosition: { x: 0, y: 0}
-      }), // stop after teleport
-      Intervals.stagger(40),
+      riders.secondRiders.concat(riders.introRiders),
+      [1, 1, 0],
+      popFn({ x: 0, y: -0.00000001 }),
+      Intervals.stagger(32)
   );
 
-  applyGravity(
-      riders.introRiders,
-      [0, 8, 0],
-      teleport({
-        shape: Shapes.KRAMUAL,
-        targetPosition: { x: -20, y: -20},
-        exitVelocity: { x: -1, y: -4 },
-      }),
-      Intervals.stagger(40),
-  );
-
-  applyGravity(
-      riders.introRiders,
-      [0, 11, 0],
-      teleport({
-        targetPosition: { x: -100, y: 300},
-        isAbsolute: true,
-
-      }),
-      Intervals.stagger(40),
-  );
-
-  applyGravity(
-      riders.introRiders,
-      [0, 16, 0],
-      teleport({
-        shape: Shapes.KRAMUAL,
-        anchorPoint: ContactPoints.TAIL,
-        targetContactPoints: PointGroups.ALL,
-        rotation: 90,
-        targetPosition: { x: -200, y: 300},
-        isAbsolute: true,
-        exitVelocity: { x: -1, y: -4 },
-      }),
-  Intervals.stagger(40),
-  );
-
-  applyGravity(
-      riders.introRiders,
-      [0, 16, 0],
-      teleport({
-        targetPosition: { x: -200, y: 300},
-        isAbsolute: true,
-      })
-  );
-
-  applyGravity(
-      riders.introRiders,
-      [0, 18, 0],
-      teleport({
-        targetPosition: { x: -20, y: 30},
-        rotation: 90,
-      }),
-  Intervals.stagger(20)
-  );
+  /*
+   applyGravity(
+       riders.introRiders,
+       [100, 16, 0],
+       teleport({
+         shape: Shapes.KRAMUAL,
+         anchorPoint: ContactPoints.TAIL,
+         affectedPoints: PointGroups.ALL,
+         rotation: 90,
+         targetPosition: { x: -200, y: 300},
+         isAbsolute: true,
+         exitVelocity: { x: -1, y: -4 },
+       }),
+       Intervals.stagger(40),
+   );
 
 
+
+ */
   // ==== PART 13: COMMIT CHANGES ====
   if (window.Actions) {
     const allRiders = Object.values(riders).flat();
