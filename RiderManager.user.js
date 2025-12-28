@@ -22,14 +22,13 @@
             RiderManager.setRiders([]);
         }
 
-        function getContactPointsForGroup(groupName) {
-            const allRiders = getRiders();
+        function getContactPoints(groupName = null) {
+            const allRiders = RiderManager.getRiders();
             const groupSize = 17;
-            const groupRiders = getGroup(groupName);
             const contactPoints = [];
 
             allRiders.forEach((rider, i) => {
-                if (groupRiders.includes(rider)) {
+                if (groupName === null || RiderManager.getGroup(groupName).includes(rider)) {
                     for (let j = 0; j < groupSize; j++) {
                         contactPoints.push(i * groupSize + j);
                     }
@@ -39,16 +38,17 @@
             return contactPoints;
         }
 
+
         function makeRider(groups, props = {}) {
             if (!groups) throw new Error("Rider must have a group. Either 'group' or ['group1', 'group2']");
             const groupSet = groups instanceof Set ? new Set(groups) : new Set(Array.isArray(groups) ? groups : [groups]);
             return {
                 groups: groupSet,
                 startPosition: props.startPosition || {x: 0, y: 0},
-                startVelocity: props.startVelocity || {x: 0, y: 0.4},
+                startVelocity: props.startVelocity || {x: 0, y: 0},
                 startAngle: props.startAngle || 0,
                 copy() {
-                    return makeRider(new Set(this.groups), {
+                    return RiderManager.makeRider(new Set(this.groups), {
                         startPosition: {...this.startPosition},
                         startVelocity: {...this.startVelocity},
                         startAngle: this.startAngle,
@@ -83,7 +83,7 @@
                 if (modifiers.groups) {
                     thisGroups = modifiers.groups(new Set(thisGroups), i);
                 }
-                result.push(makeRider(thisGroups, props));
+                result.push(RiderManager.makeRider(thisGroups, props));
             }
             return result;
         }
@@ -131,7 +131,7 @@
         window.removeFromGroup = removeFromGroup;
         window.getGroup = getGroup;
         window.allGroups = allGroups;
-        window.getContactPointsForGroup = getContactPointsForGroup;
+        window.getContactPoints = getContactPointsForGroup;
         window.clearRiders = clearRiders;
 
 
@@ -145,7 +145,7 @@
             allGroups,
             makeRider,
             repeatRider,
-            getContactPointsForGroup,
+            getContactPoints,
             clearRiders
         };
     })();
@@ -162,7 +162,7 @@
     console.log(getRiders());
     addRider(makeRider("default", {startPosition: {x: -10, y: 15}}));
     console.log(getRiders());
-    console.log("Group 1: ", getContactPointsForGroup("group1"));
-    console.log("Default: ", getContactPointsForGroup("default"));
+    console.log("Group 1: ", getGroup("group1"));
+    console.log("Default: ", getGroup("default"));
 
 })();
